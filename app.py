@@ -18,7 +18,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V7 Operations Control Center"
+APP_VERSION = "V7.2 Operations + Fillings Reports"
 
 
 # =========================
@@ -614,15 +614,79 @@ def build_reports(items, orders):
             الكمية=("الكمية رقم", "sum"),
             المبيعات=("إجمالي المنتج رقم", "sum"),
         ).reset_index().sort_values(["الفرع", "المبيعات"], ascending=[True, False])
-        reports["variety_report"] = non_addon[non_addon["الحشوة"].astype(str).str.len() > 0].groupby("الحشوة", dropna=False).agg(
+        variety_source = non_addon[non_addon["الحشوة"].astype(str).str.strip().str.len() > 0].copy()
+
+        reports["variety_report"] = variety_source.groupby("الحشوة", dropna=False).agg(
             عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
             الكمية=("الكمية رقم", "sum"),
             المبيعات=("إجمالي المنتج رقم", "sum"),
-        ).reset_index().sort_values("الكمية", ascending=False)
+            متوسط_سعر_الحبة=("سعر الحبة رقم", "mean"),
+            تحتاج_متابعة=("يحتاج متابعة؟", "sum"),
+        ).reset_index().sort_values(["الكمية", "المبيعات"], ascending=False)
+
+        reports["variety_by_branch"] = variety_source.groupby(["الفرع", "الحشوة"], dropna=False).agg(
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+            الكمية=("الكمية رقم", "sum"),
+            المبيعات=("إجمالي المنتج رقم", "sum"),
+        ).reset_index().sort_values(["الفرع", "الكمية"], ascending=[True, False])
+
+        reports["variety_by_product"] = variety_source.groupby(["المنتج", "الحشوة"], dropna=False).agg(
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+            الكمية=("الكمية رقم", "sum"),
+            المبيعات=("إجمالي المنتج رقم", "sum"),
+        ).reset_index().sort_values(["المنتج", "الكمية"], ascending=[True, False])
+
+        reports["variety_by_hour"] = variety_source.groupby(["الساعة", "الحشوة"], dropna=False).agg(
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+            الكمية=("الكمية رقم", "sum"),
+            المبيعات=("إجمالي المنتج رقم", "sum"),
+        ).reset_index()
+
+        if not reports["variety_by_hour"].empty:
+            hour_order_for_variety = variety_source.groupby("الساعة", dropna=False)["ساعة رقم"].min().reset_index(name="ساعة رقم")
+            reports["variety_by_hour"] = reports["variety_by_hour"].merge(hour_order_for_variety, on="الساعة", how="left").sort_values(["ساعة رقم", "الكمية"], ascending=[True, False]).drop(columns=["ساعة رقم"], errors="ignore")
+
+        reports["variety_by_campaign"] = variety_source.groupby(["الحملة", "الحشوة"], dropna=False).agg(
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+            الكمية=("الكمية رقم", "sum"),
+            المبيعات=("إجمالي المنتج رقم", "sum"),
+        ).reset_index().sort_values(["الحملة", "الكمية"], ascending=[True, False])
+
+        if not variety_source.empty:
+            reports["branch_variety_heatmap"] = variety_source.pivot_table(
+                index="الفرع",
+                columns="الحشوة",
+                values="الكمية رقم",
+                aggfunc="sum",
+                fill_value=0,
+            )
+            reports["product_variety_heatmap"] = variety_source.pivot_table(
+                index="المنتج",
+                columns="الحشوة",
+                values="الكمية رقم",
+                aggfunc="sum",
+                fill_value=0,
+            )
+            reports["variety_order_details"] = variety_source[[c for c in [
+                "رقم الطلب الظاهر", "رقم الطلب الموحد", "الفرع", "الحالة", "تاريخ التحليل",
+                "وقت الاستلام الأصلي", "الساعة", "العميل", "المنتج", "الحشوة",
+                "الكمية رقم", "إجمالي المنتج رقم", "سبب المتابعة", "الملاحظة"
+            ] if c in variety_source.columns]].sort_values(["الحشوة", "الفرع", "وقت الاستلام الأصلي"], na_position="last")
+        else:
+            reports["branch_variety_heatmap"] = pd.DataFrame()
+            reports["product_variety_heatmap"] = pd.DataFrame()
+            reports["variety_order_details"] = pd.DataFrame()
     else:
         reports["product_performance"] = pd.DataFrame()
         reports["product_by_branch"] = pd.DataFrame()
         reports["variety_report"] = pd.DataFrame()
+        reports["variety_by_branch"] = pd.DataFrame()
+        reports["variety_by_product"] = pd.DataFrame()
+        reports["variety_by_hour"] = pd.DataFrame()
+        reports["variety_by_campaign"] = pd.DataFrame()
+        reports["branch_variety_heatmap"] = pd.DataFrame()
+        reports["product_variety_heatmap"] = pd.DataFrame()
+        reports["variety_order_details"] = pd.DataFrame()
 
     addons = active_items[active_items["إضافة؟"]].copy()
     reports["addon_items"] = addons
@@ -822,7 +886,12 @@ def build_excel_export(reports, filters_summary):
             "status_report": "Status Report",
             "product_performance": "Product Performance",
             "product_by_branch": "Products by Branch",
-            "variety_report": "Varieties",
+            "variety_report": "Varieties Summary",
+            "variety_by_branch": "Varieties by Branch",
+            "variety_by_product": "Varieties by Product",
+            "variety_by_hour": "Varieties by Hour",
+            "variety_by_campaign": "Varieties by Campaign",
+            "variety_order_details": "Variety Order Details",
             "addons_summary": "Addons Summary",
             "addons_by_branch": "Addons by Branch",
             "need_action": "Need Action",
@@ -1058,6 +1127,7 @@ else:
     tab_prep,
     tab_sales,
     tab_products,
+    tab_varieties,
     tab_addons,
     tab_actions,
     tab_campaigns,
@@ -1070,6 +1140,7 @@ else:
     "🧾 Branch Prep",
     "💰 Sales",
     "🧁 Products",
+    "🍰 Fillings",
     "🎈 Add-ons",
     "🚨 Need Action",
     "🎯 Campaigns",
@@ -1175,12 +1246,120 @@ with tab_products:
     st.markdown('<div class="mini-title">المنتجات حسب الفرع</div>', unsafe_allow_html=True)
     display_df(reports.get("product_by_branch", pd.DataFrame()), 420)
 
-    st.markdown('<div class="mini-title">الحشوات</div>', unsafe_allow_html=True)
+    st.markdown('<div class="note-box">تم نقل تقارير الحشوات إلى تبويب مستقل باسم 🍰 Fillings حتى تكون واضحة ومفصلة.</div>', unsafe_allow_html=True)
+
+
+with tab_varieties:
+    st.markdown('<div class="section-title">🍰 Fillings / الحشوات</div>', unsafe_allow_html=True)
+
     variety = reports.get("variety_report", pd.DataFrame())
+    variety_by_branch = reports.get("variety_by_branch", pd.DataFrame())
+    variety_by_product = reports.get("variety_by_product", pd.DataFrame())
+    variety_by_hour = reports.get("variety_by_hour", pd.DataFrame())
+    variety_by_campaign = reports.get("variety_by_campaign", pd.DataFrame())
+    branch_variety_heatmap = reports.get("branch_variety_heatmap", pd.DataFrame())
+    product_variety_heatmap = reports.get("product_variety_heatmap", pd.DataFrame())
+    variety_order_details = reports.get("variety_order_details", pd.DataFrame())
+
+    fv1, fv2, fv3, fv4 = st.columns(4)
     if not variety.empty:
-        fig = px.pie(variety, names="الحشوة", values="الكمية", hole=.55, title="Mix الحشوات")
-        st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
-    display_df(variety, 300)
+        top_variety_name = str(variety.iloc[0]["الحشوة"])
+        top_variety_qty = float(variety.iloc[0]["الكمية"])
+        total_variety_qty = float(variety["الكمية"].fillna(0).sum())
+        total_variety_sales = float(variety["المبيعات"].fillna(0).sum())
+        unique_varieties = int(variety["الحشوة"].nunique())
+    else:
+        top_variety_name = "-"
+        top_variety_qty = 0
+        total_variety_qty = 0
+        total_variety_sales = 0
+        unique_varieties = 0
+
+    with fv1:
+        render_kpi("عدد الحشوات", format_int(unique_varieties), "ضمن الفلاتر", "#7c3aed")
+    with fv2:
+        render_kpi("إجمالي كمية الحشوات", format_int(total_variety_qty), "Quantity", "#16a34a")
+    with fv3:
+        render_kpi("مبيعات منتجات لها حشوة", format_money(total_variety_sales), "Item Total", "#0891b2")
+    with fv4:
+        render_kpi("أعلى حشوة", top_variety_name, f"كمية: {format_int(top_variety_qty)}", "#f59e0b")
+
+    cv1, cv2 = st.columns([1, 1])
+    with cv1:
+        if not variety.empty:
+            top_v = variety.head(12).copy()
+            fig = px.bar(
+                top_v.sort_values("الكمية"),
+                x="الكمية",
+                y="الحشوة",
+                orientation="h",
+                text="الكمية",
+                title="أكثر الحشوات حسب الكمية",
+                color="الكمية",
+                color_continuous_scale="Magma",
+            )
+            st.plotly_chart(fig_layout(fig, 470), use_container_width=True, config=chart_config())
+        else:
+            st.info("لا توجد بيانات حشوات ضمن الفلاتر الحالية.")
+
+    with cv2:
+        if not variety.empty:
+            fig = px.pie(variety, names="الحشوة", values="الكمية", hole=.55, title="Mix الحشوات")
+            st.plotly_chart(fig_layout(fig, 470), use_container_width=True, config=chart_config())
+        else:
+            st.info("لا توجد بيانات حشوات.")
+
+    st.markdown('<div class="mini-title">ملخص الحشوات</div>', unsafe_allow_html=True)
+    display_df(variety, 340)
+
+    st.markdown('<div class="mini-title">الحشوات حسب الفرع</div>', unsafe_allow_html=True)
+    if not variety_by_branch.empty:
+        fig = px.bar(
+            variety_by_branch,
+            x="الفرع",
+            y="الكمية",
+            color="الحشوة",
+            title="توزيع الحشوات على الفروع",
+            barmode="group",
+        )
+        st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
+    display_df(variety_by_branch, 420)
+
+    if not branch_variety_heatmap.empty:
+        st.markdown('<div class="mini-title">Heatmap الفرع × الحشوة</div>', unsafe_allow_html=True)
+        fig = px.imshow(branch_variety_heatmap, text_auto=True, aspect="auto", title="كمية الحشوات حسب الفروع", color_continuous_scale="YlGnBu")
+        fig.update_xaxes(side="top")
+        st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
+
+    st.markdown('<div class="mini-title">الحشوات حسب المنتج</div>', unsafe_allow_html=True)
+    display_df(variety_by_product, 520)
+
+    if not product_variety_heatmap.empty:
+        top_products_for_heatmap = product_variety_heatmap.sum(axis=1).sort_values(ascending=False).head(20).index
+        pv_heat = product_variety_heatmap.loc[top_products_for_heatmap]
+        st.markdown('<div class="mini-title">Heatmap المنتج × الحشوة — أعلى 20 منتج</div>', unsafe_allow_html=True)
+        fig = px.imshow(pv_heat, text_auto=True, aspect="auto", title="توزيع الحشوات حسب المنتجات", color_continuous_scale="Teal")
+        fig.update_xaxes(side="top")
+        st.plotly_chart(fig_layout(fig, 620), use_container_width=True, config=chart_config())
+
+    st.markdown('<div class="mini-title">الحشوات حسب الساعة</div>', unsafe_allow_html=True)
+    if not variety_by_hour.empty:
+        fig = px.line(
+            variety_by_hour,
+            x="الساعة",
+            y="الكمية",
+            color="الحشوة",
+            markers=True,
+            title="طلب الحشوات حسب وقت الاستلام",
+        )
+        st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=chart_config())
+    display_df(variety_by_hour, 420)
+
+    st.markdown('<div class="mini-title">الحشوات حسب الحملة</div>', unsafe_allow_html=True)
+    display_df(variety_by_campaign, 420)
+
+    st.markdown('<div class="mini-title">تفاصيل طلبات الحشوات</div>', unsafe_allow_html=True)
+    display_df(variety_order_details, 560)
 
 
 with tab_addons:
@@ -1310,12 +1489,12 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V7",
+        "⬇️ تحميل Excel شامل كل التقارير V7.2",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V7.xlsx",
+        file_name="MAD_Orders_Control_Center_V7_2.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
-        '<div class="note-box">الملف يحتوي على Executive Summary، Daily Operations، Sales، Products، Add-ons، Need Action، Campaigns، Data Quality، Multi Item Orders، والبيانات المفلترة.</div>',
+        '<div class="note-box">الملف يحتوي على Executive Summary، Daily Operations، Sales، Products، Fillings، Add-ons، Need Action، Campaigns، Data Quality، Multi Item Orders، والبيانات المفلترة.</div>',
         unsafe_allow_html=True,
     )
