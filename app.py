@@ -1185,7 +1185,7 @@ if source_type == "رفع ملف":
 else:
     DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
 
-sheet_url = st.sidebar.text_input(
+    sheet_url = st.sidebar.text_input(
     "رابط Google Sheet",
     value=DEFAULT_GOOGLE_SHEET_URL,
     placeholder="https://docs.google.com/spreadsheets/d/..."
