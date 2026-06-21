@@ -929,7 +929,7 @@ def parse_date_series(series):
 # =========================
 
 st.set_page_config(
-    page_title="MAD Orders Intelligence Dashboard V5",
+    page_title="MAD Orders Dashboard V5",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1106,6 +1106,161 @@ st.markdown(
         border-radius: 14px;
         font-weight: 700;
     }
+    
+    /* =========================
+       Mobile Responsive Fixes
+       ========================= */
+
+    @media (max-width: 768px) {
+        .block-container {
+            padding-left: 0.75rem !important;
+            padding-right: 0.75rem !important;
+            padding-top: 0.75rem !important;
+            max-width: 100% !important;
+        }
+
+        .hero {
+            padding: 18px 16px !important;
+            border-radius: 18px !important;
+            margin-bottom: 12px !important;
+        }
+
+        .hero h1 {
+            font-size: 22px !important;
+            line-height: 1.35 !important;
+        }
+
+        .hero p {
+            font-size: 12.5px !important;
+            line-height: 1.7 !important;
+        }
+
+        .kpi-card {
+            min-height: auto !important;
+            padding: 16px 14px !important;
+            border-radius: 16px !important;
+            margin-bottom: 10px !important;
+        }
+
+        .kpi-label {
+            font-size: 12px !important;
+            margin-bottom: 8px !important;
+        }
+
+        .kpi-value {
+            font-size: 22px !important;
+            line-height: 1.25 !important;
+        }
+
+        .kpi-sub {
+            font-size: 11px !important;
+            margin-top: 6px !important;
+        }
+
+        .section-title {
+            font-size: 18px !important;
+            margin: 14px 0 8px 0 !important;
+        }
+
+        .glass-box {
+            padding: 14px !important;
+            border-radius: 16px !important;
+        }
+
+        .small-note {
+            font-size: 12px !important;
+        }
+
+        .source-badge,
+        .date-badge {
+            display: block !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            margin: 6px 0 !important;
+            text-align: center !important;
+            font-size: 12px !important;
+        }
+
+        div[data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+
+        div[data-testid="stHorizontalBlock"] {
+            flex-wrap: wrap !important;
+            gap: 0.5rem !important;
+        }
+
+        .stTabs [data-baseweb="tab-list"] {
+            overflow-x: auto !important;
+            white-space: nowrap !important;
+            flex-wrap: nowrap !important;
+            padding-bottom: 6px !important;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+            padding: 8px 12px !important;
+            font-size: 12px !important;
+            min-width: max-content !important;
+        }
+
+        div[data-testid="stDataFrame"] {
+            width: 100% !important;
+            overflow-x: auto !important;
+            border-radius: 12px !important;
+        }
+
+        iframe {
+            max-width: 100% !important;
+        }
+
+        .js-plotly-plot,
+        .plotly,
+        .plot-container,
+        .svg-container {
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+
+        .stTextInput input,
+        .stSelectbox,
+        .stDateInput,
+        .stRadio,
+        .stFileUploader {
+            font-size: 13px !important;
+        }
+
+        .stDownloadButton button,
+        .stButton button {
+            width: 100% !important;
+            min-height: 44px !important;
+            font-size: 13px !important;
+        }
+
+        section[data-testid="stSidebar"] {
+            min-width: 270px !important;
+        }
+    }
+
+    @media (max-width: 420px) {
+        .hero h1 {
+            font-size: 20px !important;
+        }
+
+        .hero p {
+            font-size: 12px !important;
+        }
+
+        .kpi-value {
+            font-size: 20px !important;
+        }
+
+        .section-title {
+            font-size: 16px !important;
+        }
+    }
+
     </style>
     """,
     unsafe_allow_html=True
@@ -1151,6 +1306,15 @@ def fig_layout(fig, height=390):
     fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)", zerolinecolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)", zerolinecolor="rgba(255,255,255,0.08)")
     return fig
+
+
+
+def mobile_chart_config():
+    return {
+        "responsive": True,
+        "displayModeBar": False,
+        "scrollZoom": False,
+    }
 
 
 def display_pretty_dataframe(df, height=420):
@@ -1210,7 +1374,7 @@ exclude_cancelled = st.sidebar.toggle("استبعاد الطلبات الملغ�
 st.markdown(
     """
     <div class="hero">
-        <h1>📊 MAD Orders Intelligence Dashboard V5</h1>
+        <h1>📊 MAD Orders Dashboard V5</h1>
         <p>
             لوحة تحليل تشغيلية تفاعلية للطلبات حسب الفرع والساعة والحشوات.
             تدعم Google Sheet + فلترة تاريخ الاستلام ليوم محدد أو فترة متعددة الأيام.
@@ -1653,7 +1817,7 @@ if df is not None and len(df) > 0:
             )
             fig.update_traces(textposition="outside")
             fig.update_yaxes(categoryorder="total ascending")
-            st.plotly_chart(fig_layout(fig, 430), use_container_width=True)
+            st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
         with c2:
             fig = px.line(
@@ -1664,7 +1828,7 @@ if df is not None and len(df) > 0:
                 title="منحنى ضغط الطلبات بالساعة"
             )
             fig.update_traces(line=dict(width=4, color="#22c55e"), marker=dict(size=10))
-            st.plotly_chart(fig_layout(fig, 430), use_container_width=True)
+            st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
         c3, c4 = st.columns([1, 1])
 
@@ -1686,7 +1850,7 @@ if df is not None and len(df) > 0:
                     title="Mix الحشوات"
                 )
                 fig.update_traces(textposition="inside", textinfo="percent+label")
-                st.plotly_chart(fig_layout(fig, 430), use_container_width=True)
+                st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
             else:
                 st.info("لا توجد حشوات واضحة في الملف.")
 
@@ -1701,7 +1865,7 @@ if df is not None and len(df) > 0:
                     color_continuous_scale=["#0f172a", "#2563eb", "#22c55e", "#facc15"]
                 )
                 fig.update_xaxes(side="top")
-                st.plotly_chart(fig_layout(fig, 430), use_container_width=True)
+                st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
     with tab_hours:
         st.markdown('<div class="section-title">تحليل الطلبات حسب الساعة</div>', unsafe_allow_html=True)
@@ -1719,7 +1883,7 @@ if df is not None and len(df) > 0:
             color_continuous_scale=["#1d4ed8", "#16a34a", "#f59e0b"]
         )
         fig.update_traces(textposition="outside")
-        st.plotly_chart(fig_layout(fig, 440), use_container_width=True)
+        st.plotly_chart(fig_layout(fig, 440), use_container_width=True, config=mobile_chart_config())
 
         st.markdown('<div class="section-title">جدول الفرع × الساعة</div>', unsafe_allow_html=True)
         display_pretty_dataframe(hourly, height=450)
@@ -1744,7 +1908,7 @@ if df is not None and len(df) > 0:
                     color_continuous_scale=["#2563eb", "#16a34a", "#f59e0b"]
                 )
                 fig.update_traces(textposition="outside")
-                st.plotly_chart(fig_layout(fig, 430), use_container_width=True)
+                st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
             with c2:
                 fig = px.pie(
@@ -1755,7 +1919,7 @@ if df is not None and len(df) > 0:
                     title="نسبة كل حشوة من الإجمالي"
                 )
                 fig.update_traces(textposition="inside", textinfo="percent+label")
-                st.plotly_chart(fig_layout(fig, 430), use_container_width=True)
+                st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
             st.markdown('<div class="section-title">الحشوات لكل فرع - حسب الكمية</div>', unsafe_allow_html=True)
             display_pretty_dataframe(fillings_qty, height=420)
@@ -1813,7 +1977,7 @@ if df is not None and len(df) > 0:
                     color_continuous_scale=["#1d4ed8", "#16a34a"]
                 )
                 fig.update_traces(textposition="outside")
-                st.plotly_chart(fig_layout(fig, 410), use_container_width=True)
+                st.plotly_chart(fig_layout(fig, 410), use_container_width=True, config=mobile_chart_config())
 
             with c2:
                 if len(branch_items):
@@ -1833,7 +1997,7 @@ if df is not None and len(df) > 0:
                         title=f"Mix الحشوات في {selected_branch}"
                     )
                     fig.update_traces(textinfo="percent+label")
-                    st.plotly_chart(fig_layout(fig, 410), use_container_width=True)
+                    st.plotly_chart(fig_layout(fig, 410), use_container_width=True, config=mobile_chart_config())
                 else:
                     st.info("لا توجد حشوات لهذا الفرع.")
 
@@ -1858,7 +2022,7 @@ if df is not None and len(df) > 0:
                         title=f"الحشوات بالساعة - {selected_branch}",
                         barmode="stack"
                     )
-                    st.plotly_chart(fig_layout(fig, 460), use_container_width=True)
+                    st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=mobile_chart_config())
 
     with tab_tables:
         st.markdown('<div class="section-title">الجداول التفصيلية</div>', unsafe_allow_html=True)
