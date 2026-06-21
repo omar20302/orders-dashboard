@@ -1183,10 +1183,13 @@ if source_type == "رفع ملف":
         df = read_uploaded_file(uploaded_file)
         source_label = f"ملف مرفوع: {uploaded_file.name}"
 else:
-    sheet_url = st.sidebar.text_input(
-        "رابط Google Sheet",
-        placeholder="https://docs.google.com/spreadsheets/d/..."
-    )
+    DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
+
+sheet_url = st.sidebar.text_input(
+    "رابط Google Sheet",
+    value=DEFAULT_GOOGLE_SHEET_URL,
+    placeholder="https://docs.google.com/spreadsheets/d/..."
+)
     sheet_gid = st.sidebar.text_input(
         "Sheet GID",
         value="0",
