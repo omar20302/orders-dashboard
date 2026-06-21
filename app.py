@@ -15,11 +15,11 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V8.2 - Readable Filters + Production Center
+# MAD Orders Dashboard V8.3 - Advanced Reports Pack
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.2 Readable Filters + Hour Ranges"
+APP_VERSION = "V8.3 Advanced Reports Pack"
 
 
 # =========================
@@ -899,6 +899,354 @@ def build_reports(items, orders):
     return reports
 
 
+
+def first_or_dash(series):
+    try:
+        s = series.dropna()
+        if len(s):
+            return str(s.iloc[0])
+    except Exception:
+        pass
+    return "-"
+
+
+def score_label(score):
+    try:
+        score = float(score)
+    except Exception:
+        return "Unknown"
+    if score >= 90:
+        return "Excellent"
+    if score >= 75:
+        return "Good"
+    if score >= 55:
+        return "Needs Attention"
+    return "Critical"
+
+
+def build_v83_advanced_reports(items, active_items, active_orders, reports):
+    """Advanced management reports pack for V8.3."""
+    advanced = {}
+
+    if items is None:
+        items = pd.DataFrame()
+    if active_items is None:
+        active_items = pd.DataFrame()
+    if active_orders is None:
+        active_orders = pd.DataFrame()
+
+    non_addon = active_items[~active_items["إضافة؟"]].copy() if not active_items.empty and "إضافة؟" in active_items.columns else pd.DataFrame()
+    addons = active_items[active_items["إضافة؟"]].copy() if not active_items.empty and "إضافة؟" in active_items.columns else pd.DataFrame()
+
+    # -------------------------
+    # Executive Summary
+    # -------------------------
+    total_orders_adv = int(active_orders["رقم الطلب الموحد"].nunique()) if not active_orders.empty and "رقم الطلب الموحد" in active_orders.columns else 0
+    total_sales_adv = float(active_orders["قيمة الطلب"].fillna(0).sum()) if not active_orders.empty and "قيمة الطلب" in active_orders.columns else 0.0
+    avg_order_adv = float(active_orders["قيمة الطلب"].fillna(0).mean()) if not active_orders.empty and "قيمة الطلب" in active_orders.columns else 0.0
+    addon_orders_adv = int(active_orders["فيه إضافات"].sum()) if not active_orders.empty and "فيه إضافات" in active_orders.columns else 0
+    action_orders_adv = int(active_orders["يحتاج متابعة"].sum()) if not active_orders.empty and "يحتاج متابعة" in active_orders.columns else 0
+    upsell_rate_adv = round(addon_orders_adv / total_orders_adv * 100, 1) if total_orders_adv else 0.0
+    action_rate_adv = round(action_orders_adv / total_orders_adv * 100, 1) if total_orders_adv else 0.0
+
+    top_branch_adv = "-"
+    top_branch_sales_adv = 0.0
+    if not active_orders.empty:
+        branch_sales_tmp = active_orders.groupby("الفرع", dropna=False)["قيمة الطلب"].sum().sort_values(ascending=False)
+        if len(branch_sales_tmp):
+            top_branch_adv = str(branch_sales_tmp.index[0])
+            top_branch_sales_adv = float(branch_sales_tmp.iloc[0])
+
+    top_product_adv = "-"
+    if not non_addon.empty:
+        prod_qty_tmp = non_addon.groupby("المنتج", dropna=False)["الكمية رقم"].sum().sort_values(ascending=False)
+        if len(prod_qty_tmp):
+            top_product_adv = str(prod_qty_tmp.index[0])
+
+    top_filling_adv = "-"
+    if not non_addon.empty and "الحشوة" in non_addon.columns:
+        fill_qty_tmp = non_addon[non_addon["الحشوة"].astype(str).str.strip().ne("")].groupby("الحشوة", dropna=False)["الكمية رقم"].sum().sort_values(ascending=False)
+        if len(fill_qty_tmp):
+            top_filling_adv = str(fill_qty_tmp.index[0])
+
+    top_hour_range_adv = "-"
+    if not active_orders.empty and "ساعة رقم" in active_orders.columns:
+        hr = active_orders.copy()
+        hr["نطاق ساعة الاستلام"] = hr["ساعة رقم"].apply(hour_range_label)
+        hour_tmp = hr.groupby("نطاق ساعة الاستلام", dropna=False)["رقم الطلب الموحد"].nunique().sort_values(ascending=False)
+        if len(hour_tmp):
+            top_hour_range_adv = str(hour_tmp.index[0])
+
+    advanced["advanced_executive_summary"] = pd.DataFrame([
+        {"المؤشر": "عدد الطلبات", "القيمة": total_orders_adv, "ملاحظة": "Unique Order Id"},
+        {"المؤشر": "إجمالي المبيعات", "القيمة": total_sales_adv, "ملاحظة": "بدون تكرار قيمة الطلب"},
+        {"المؤشر": "متوسط قيمة الطلب AOV", "القيمة": avg_order_adv, "ملاحظة": "Sales / Orders"},
+        {"المؤشر": "نسبة الطلبات بإضافات", "القيمة": upsell_rate_adv, "ملاحظة": "%"},
+        {"المؤشر": "نسبة الطلبات التي تحتاج متابعة", "القيمة": action_rate_adv, "ملاحظة": "%"},
+        {"المؤشر": "أعلى فرع بالمبيعات", "القيمة": top_branch_adv, "ملاحظة": format_money(top_branch_sales_adv) if "format_money" in globals() else str(top_branch_sales_adv)},
+        {"المؤشر": "أعلى منتج بالكمية", "القيمة": top_product_adv, "ملاحظة": ""},
+        {"المؤشر": "أعلى حشوة بالكمية", "القيمة": top_filling_adv, "ملاحظة": ""},
+        {"المؤشر": "أعلى نطاق ساعة ضغط", "القيمة": top_hour_range_adv, "ملاحظة": ""},
+    ])
+
+    # -------------------------
+    # Branch Ranking
+    # -------------------------
+    if not active_orders.empty:
+        branch_ranking = active_orders.groupby("الفرع", dropna=False).agg(
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            المبيعات=("قيمة الطلب", "sum"),
+            متوسط_الطلب=("قيمة الطلب", "mean"),
+            طلبات_بإضافات=("فيه إضافات", "sum"),
+            طلبات_تحتاج_متابعة=("يحتاج متابعة", "sum"),
+            عدد_الأصناف=("عدد الأصناف", "sum"),
+        ).reset_index()
+
+        if not active_items.empty:
+            qty_branch = active_items.groupby("الفرع", dropna=False)["الكمية رقم"].sum().reset_index(name="إجمالي_الكمية")
+            branch_ranking = branch_ranking.merge(qty_branch, on="الفرع", how="left")
+        else:
+            branch_ranking["إجمالي_الكمية"] = 0
+
+        branch_ranking["نسبة_Upsell_%"] = (branch_ranking["طلبات_بإضافات"] / branch_ranking["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        branch_ranking["نسبة_متابعة_%"] = (branch_ranking["طلبات_تحتاج_متابعة"] / branch_ranking["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        branch_ranking["رتبة_المبيعات"] = branch_ranking["المبيعات"].rank(method="dense", ascending=False).astype(int)
+        branch_ranking["رتبة_الطلبات"] = branch_ranking["الطلبات"].rank(method="dense", ascending=False).astype(int)
+        branch_ranking = branch_ranking.sort_values(["رتبة_المبيعات", "رتبة_الطلبات"])
+    else:
+        branch_ranking = pd.DataFrame()
+    advanced["advanced_branch_ranking"] = branch_ranking
+
+    # -------------------------
+    # Product Value Report
+    # -------------------------
+    if not non_addon.empty:
+        product_value = non_addon.groupby("المنتج", dropna=False).agg(
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            الكمية=("الكمية رقم", "sum"),
+            المبيعات=("إجمالي المنتج رقم", "sum"),
+            متوسط_السعر=("سعر الحبة رقم", "mean"),
+            المتابعة=("يحتاج متابعة؟", "sum"),
+        ).reset_index()
+        product_value["مبيعات_لكل_طلب"] = (product_value["المبيعات"] / product_value["الطلبات"].replace(0, pd.NA)).fillna(0).round(2)
+        product_value["نسبة_متابعة_%"] = (product_value["المتابعة"] / product_value["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        product_value["حصة_المبيعات_%"] = (product_value["المبيعات"] / product_value["المبيعات"].sum() * 100).fillna(0).round(1)
+
+        q_qty = product_value["الكمية"].quantile(0.65) if len(product_value) else 0
+        q_val = product_value["مبيعات_لكل_طلب"].quantile(0.65) if len(product_value) else 0
+        def product_segment(row):
+            if row["الكمية"] >= q_qty and row["مبيعات_لكل_طلب"] >= q_val:
+                return "Hero Product"
+            if row["الكمية"] >= q_qty and row["مبيعات_لكل_طلب"] < q_val:
+                return "Volume Driver"
+            if row["الكمية"] < q_qty and row["مبيعات_لكل_طلب"] >= q_val:
+                return "High Value Niche"
+            return "Low Priority"
+        product_value["تصنيف_القيمة"] = product_value.apply(product_segment, axis=1)
+        product_value = product_value.sort_values(["المبيعات", "الكمية"], ascending=False)
+    else:
+        product_value = pd.DataFrame()
+    advanced["advanced_product_value"] = product_value
+
+    # -------------------------
+    # Filling Intelligence
+    # -------------------------
+    if not non_addon.empty and "الحشوة" in non_addon.columns:
+        filling_src = non_addon[non_addon["الحشوة"].astype(str).str.strip().ne("")].copy()
+        if not filling_src.empty:
+            filling_int = filling_src.groupby("الحشوة", dropna=False).agg(
+                الطلبات=("رقم الطلب الموحد", "nunique"),
+                الكمية=("الكمية رقم", "sum"),
+                المبيعات=("إجمالي المنتج رقم", "sum"),
+                متوسط_السعر=("سعر الحبة رقم", "mean"),
+                المتابعة=("يحتاج متابعة؟", "sum"),
+            ).reset_index()
+            filling_int["نسبة_متابعة_%"] = (filling_int["المتابعة"] / filling_int["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+            filling_int["حصة_الكمية_%"] = (filling_int["الكمية"] / filling_int["الكمية"].sum() * 100).fillna(0).round(1)
+            filling_int["حصة_المبيعات_%"] = (filling_int["المبيعات"] / filling_int["المبيعات"].sum() * 100).fillna(0).round(1)
+            filling_int["أولوية_الإنتاج"] = pd.cut(
+                filling_int["الكمية"].rank(method="first"),
+                bins=[0, max(1, len(filling_int)*0.33), max(2, len(filling_int)*0.66), max(3, len(filling_int))],
+                labels=["منخفضة", "متوسطة", "عالية"],
+                include_lowest=True,
+            ).astype(str)
+            filling_int = filling_int.sort_values(["الكمية", "المبيعات"], ascending=False)
+
+            filling_by_branch_top = filling_src.groupby(["الفرع", "الحشوة"], dropna=False).agg(
+                الطلبات=("رقم الطلب الموحد", "nunique"),
+                الكمية=("الكمية رقم", "sum"),
+                المبيعات=("إجمالي المنتج رقم", "sum"),
+            ).reset_index()
+            filling_by_branch_top["رتبة_داخل_الفرع"] = filling_by_branch_top.groupby("الفرع")["الكمية"].rank(method="dense", ascending=False).astype(int)
+            filling_by_branch_top = filling_by_branch_top.sort_values(["الفرع", "رتبة_داخل_الفرع"])
+        else:
+            filling_int = pd.DataFrame()
+            filling_by_branch_top = pd.DataFrame()
+    else:
+        filling_int = pd.DataFrame()
+        filling_by_branch_top = pd.DataFrame()
+    advanced["advanced_filling_intelligence"] = filling_int
+    advanced["advanced_filling_by_branch_rank"] = filling_by_branch_top
+
+    # -------------------------
+    # Add-ons Opportunity
+    # -------------------------
+    if not active_orders.empty:
+        addon_branch = active_orders.groupby("الفرع", dropna=False).agg(
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            طلبات_بإضافات=("فيه إضافات", "sum"),
+            متوسط_الطلب=("قيمة الطلب", "mean"),
+        ).reset_index()
+        addon_branch["طلبات_بدون_إضافات"] = addon_branch["الطلبات"] - addon_branch["طلبات_بإضافات"]
+        addon_branch["نسبة_Upsell_%"] = (addon_branch["طلبات_بإضافات"] / addon_branch["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+
+        avg_with = active_orders[active_orders["فيه إضافات"].astype(bool)].groupby("الفرع", dropna=False)["قيمة الطلب"].mean().reset_index(name="متوسط_مع_إضافات")
+        avg_without = active_orders[~active_orders["فيه إضافات"].astype(bool)].groupby("الفرع", dropna=False)["قيمة الطلب"].mean().reset_index(name="متوسط_بدون_إضافات")
+        addon_branch = addon_branch.merge(avg_with, on="الفرع", how="left").merge(avg_without, on="الفرع", how="left")
+        addon_branch["فرق_المتوسط"] = (addon_branch["متوسط_مع_إضافات"].fillna(0) - addon_branch["متوسط_بدون_إضافات"].fillna(0)).round(2)
+        addon_branch["فرصة"] = addon_branch["نسبة_Upsell_%"].apply(lambda x: "فرصة عالية" if x < 25 else ("متوسطة" if x < 45 else "جيد"))
+        addon_branch = addon_branch.sort_values(["فرصة", "نسبة_Upsell_%", "طلبات_بدون_إضافات"], ascending=[True, True, False])
+    else:
+        addon_branch = pd.DataFrame()
+    advanced["advanced_addons_opportunity_branch"] = addon_branch
+
+    if not non_addon.empty and not active_orders.empty:
+        order_addon_flag = active_orders[["رقم الطلب الموحد", "فيه إضافات"]].drop_duplicates()
+        prod_orders = non_addon[["رقم الطلب الموحد", "المنتج"]].drop_duplicates().merge(order_addon_flag, on="رقم الطلب الموحد", how="left")
+        prod_addon = prod_orders.groupby("المنتج", dropna=False).agg(
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            طلبات_بإضافات=("فيه إضافات", "sum"),
+        ).reset_index()
+        prod_addon["طلبات_بدون_إضافات"] = prod_addon["الطلبات"] - prod_addon["طلبات_بإضافات"]
+        prod_addon["نسبة_Upsell_%"] = (prod_addon["طلبات_بإضافات"] / prod_addon["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        prod_addon["اقتراح Bundle"] = prod_addon["المنتج"].apply(lambda x: f"{short_label(x, 28)} + Candles/Gift Card")
+        prod_addon = prod_addon.sort_values(["طلبات_بدون_إضافات", "الطلبات"], ascending=False)
+    else:
+        prod_addon = pd.DataFrame()
+    advanced["advanced_addons_product_opportunity"] = prod_addon
+
+    # -------------------------
+    # Notes Intelligence
+    # -------------------------
+    if not active_items.empty:
+        note_src = active_items.copy()
+        note_src["طول_الملاحظة"] = note_src["الملاحظة"].astype(str).str.len()
+        notes_product = note_src.groupby("المنتج", dropna=False).agg(
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+            متوسط_طول_الملاحظة=("طول_الملاحظة", "mean"),
+            تحتاج_متابعة=("يحتاج متابعة؟", "sum"),
+        ).reset_index()
+        notes_product["نسبة_متابعة_%"] = (notes_product["تحتاج_متابعة"] / notes_product["عدد_الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        notes_product = notes_product.sort_values(["تحتاج_متابعة", "متوسط_طول_الملاحظة"], ascending=False)
+
+        keyword_map = {
+            "صورة / Photo": ["صورة", "الصورة", "الصوره", "photo", "picture", "image"],
+            "كتابة / Writing": ["كتابة", "اكتب", "العبارة", "write", "writing"],
+            "تواصل / Contact": ["تواصل", "اتصال", "واتساب", "contact", "call", "whatsapp", "text"],
+            "تعديل تصميم": ["تعديل", "تصميم", "لون", "قلوب", "draw", "design", "color", "hearts"],
+            "مشكلة / Problem": ["مشكلة", "خطأ", "غلط", "problem", "wrong", "mistake"],
+        }
+        notes_text = note_src["الملاحظة"].fillna("").astype(str).str.lower()
+        keyword_rows = []
+        for label, keys in keyword_map.items():
+            mask = notes_text.apply(lambda x: any(k.lower() in x for k in keys))
+            keyword_rows.append({"الكلمة/التصنيف": label, "عدد الصفوف": int(mask.sum()), "نسبة من الصفوف %": round(mask.mean()*100, 1) if len(mask) else 0})
+        notes_keywords = pd.DataFrame(keyword_rows).sort_values("عدد الصفوف", ascending=False)
+    else:
+        notes_product = pd.DataFrame()
+        notes_keywords = pd.DataFrame()
+    advanced["advanced_notes_by_product"] = notes_product
+    advanced["advanced_notes_keywords"] = notes_keywords
+
+    # -------------------------
+    # Data Quality Score
+    # -------------------------
+    if not items.empty:
+        quality = items.copy()
+        issue_masks = pd.DataFrame({
+            "تاريخ_ناقص": quality["تاريخ التوصيل الأصلي"].astype(str).str.strip().eq(""),
+            "وقت_ناقص": quality["وقت الاستلام الأصلي"].astype(str).str.strip().eq(""),
+            "فرع_غير_محدد": quality["الفرع"].eq("العقيق"),
+            "منتج_بدون_اسم": quality["المنتج"].eq("بدون اسم منتج"),
+            "قيمة_صفرية": quality["قيمة الطلب رقم"].fillna(0).eq(0),
+            "حشوة_ناقصة": (~quality["إضافة؟"]) & quality["الحشوة"].astype(str).str.strip().eq(""),
+        })
+        quality["عدد_مشاكل_الجودة"] = issue_masks.sum(axis=1)
+        quality_score = quality.groupby("الفرع", dropna=False).agg(
+            الصفوف=("رقم الطلب الموحد", "count"),
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            إجمالي_مشاكل_الجودة=("عدد_مشاكل_الجودة", "sum"),
+        ).reset_index()
+        quality_score["مشاكل_لكل_100_صف"] = (quality_score["إجمالي_مشاكل_الجودة"] / quality_score["الصفوف"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        quality_score["Quality Score"] = (100 - quality_score["مشاكل_لكل_100_صف"]).clip(lower=0, upper=100).round(1)
+        quality_score["التقييم"] = quality_score["Quality Score"].apply(score_label)
+        quality_score = quality_score.sort_values(["Quality Score", "إجمالي_مشاكل_الجودة"], ascending=[True, False])
+    else:
+        quality_score = pd.DataFrame()
+    advanced["advanced_data_quality_score"] = quality_score
+
+    # -------------------------
+    # Hourly Capacity
+    # -------------------------
+    if not active_orders.empty:
+        cap_orders = active_orders.copy()
+        cap_orders["نطاق ساعة الاستلام"] = cap_orders["ساعة رقم"].apply(hour_range_label)
+        hourly_capacity = cap_orders.groupby("نطاق ساعة الاستلام", dropna=False).agg(
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            المبيعات=("قيمة الطلب", "sum"),
+            متوسط_الطلب=("قيمة الطلب", "mean"),
+            تحتاج_متابعة=("يحتاج متابعة", "sum"),
+        ).reset_index()
+        if not active_items.empty:
+            cap_items = active_items.copy()
+            cap_items["نطاق ساعة الاستلام"] = cap_items["ساعة رقم"].apply(hour_range_label)
+            qty_by_hour = cap_items.groupby("نطاق ساعة الاستلام", dropna=False).agg(
+                الكمية=("الكمية رقم", "sum"),
+                صفوف_الأصناف=("رقم الطلب الموحد", "count"),
+            ).reset_index()
+            hourly_capacity = hourly_capacity.merge(qty_by_hour, on="نطاق ساعة الاستلام", how="left")
+        else:
+            hourly_capacity["الكمية"] = 0
+            hourly_capacity["صفوف_الأصناف"] = 0
+        hourly_capacity["Action Rate %"] = (hourly_capacity["تحتاج_متابعة"] / hourly_capacity["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        hourly_capacity["_sort"] = hourly_capacity["نطاق ساعة الاستلام"].apply(hour_range_sort_value)
+        hourly_capacity = hourly_capacity.sort_values("_sort").drop(columns=["_sort"])
+    else:
+        hourly_capacity = pd.DataFrame()
+    advanced["advanced_hourly_capacity"] = hourly_capacity
+
+    # -------------------------
+    # Campaign Performance
+    # -------------------------
+    if not active_items.empty:
+        camp_base = active_items.copy()
+        camp_perf = camp_base.groupby("الحملة", dropna=False).agg(
+            الطلبات=("رقم الطلب الموحد", "nunique"),
+            الكمية=("الكمية رقم", "sum"),
+            مبيعات_الأصناف=("إجمالي المنتج رقم", "sum"),
+            تحتاج_متابعة=("يحتاج متابعة؟", "sum"),
+        ).reset_index()
+        camp_perf["نسبة_متابعة_%"] = (camp_perf["تحتاج_متابعة"] / camp_perf["الطلبات"].replace(0, pd.NA) * 100).fillna(0).round(1)
+        camp_perf = camp_perf.sort_values(["مبيعات_الأصناف", "الطلبات"], ascending=False)
+
+        def top_value_for_campaign(campaign, col):
+            sub = camp_base[camp_base["الحملة"].eq(campaign)]
+            if sub.empty or col not in sub.columns:
+                return "-"
+            vc = sub.groupby(col, dropna=False)["الكمية رقم"].sum().sort_values(ascending=False)
+            return str(vc.index[0]) if len(vc) else "-"
+
+        if not camp_perf.empty:
+            camp_perf["أفضل_فرع"] = camp_perf["الحملة"].apply(lambda c: top_value_for_campaign(c, "الفرع"))
+            camp_perf["أفضل_منتج"] = camp_perf["الحملة"].apply(lambda c: top_value_for_campaign(c, "المنتج"))
+            camp_perf["أفضل_حشوة"] = camp_perf["الحملة"].apply(lambda c: top_value_for_campaign(c, "الحشوة"))
+    else:
+        camp_perf = pd.DataFrame()
+    advanced["advanced_campaign_performance"] = camp_perf
+
+    return advanced
+
+
 # =========================
 # Display Helpers
 # =========================
@@ -1150,6 +1498,18 @@ def build_excel_export(reports, filters_summary):
             "orders_active": "Daily Operations",
             "production_queue": "Production Queue",
             "action_center": "Action Center",
+            "advanced_executive_summary": "V83 Executive Summary",
+            "advanced_branch_ranking": "V83 Branch Ranking",
+            "advanced_product_value": "V83 Product Value",
+            "advanced_filling_intelligence": "V83 Filling Intel",
+            "advanced_filling_by_branch_rank": "V83 Filling by Branch",
+            "advanced_addons_opportunity_branch": "V83 Addons Branch",
+            "advanced_addons_product_opportunity": "V83 Addons Product",
+            "advanced_notes_keywords": "V83 Notes Keywords",
+            "advanced_notes_by_product": "V83 Notes by Product",
+            "advanced_data_quality_score": "V83 Quality Score",
+            "advanced_hourly_capacity": "V83 Hourly Capacity",
+            "advanced_campaign_performance": "V83 Campaign Perf",
             "sales_by_branch": "Sales by Branch",
             "sales_by_hour": "Sales by Hour",
             "status_report": "Status Report",
@@ -1419,7 +1779,7 @@ st.markdown(
     f"""
     <div class="hero">
         <h1>🧁 MAD Orders Control Center</h1>
-        <p>{APP_VERSION} — لوحة تشغيل يومية للمبيعات، التجهيز، متابعة الطلبات، أرقام التواصل، الطباعة، الإضافات، الحشوات، الحملات، وجودة البيانات.</p>
+        <p>{APP_VERSION} — لوحة تشغيل وتقارير إدارية متقدمة: ملخص تنفيذي، ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، الطاقة التشغيلية، وجودة البيانات.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1547,6 +1907,9 @@ active_orders = reports["orders_active"]
 reports["production_queue"] = build_production_queue(active_items)
 reports["action_center"] = build_action_center(active_items)
 
+# V8.3 advanced management reports
+reports.update(build_v83_advanced_reports(filtered, active_items, active_orders, reports))
+
 # Core KPIs
 total_rows = len(filtered)
 total_orders = int(active_orders["رقم الطلب الموحد"].nunique()) if not active_orders.empty else 0
@@ -1639,6 +2002,7 @@ else:
     tab_branch,
     tab_product,
     tab_quality,
+    tab_advanced,
     tab_export,
 ) = st.tabs([
     "📍 Daily Ops",
@@ -1655,6 +2019,7 @@ else:
     "🏬 Branch Deep Dive",
     "🔍 Product Deep Dive",
     "🧹 Data Quality",
+    "📊 Advanced Reports",
     "⬇️ Export",
 ])
 
@@ -2334,6 +2699,203 @@ with tab_quality:
     display_df(reports.get("data_quality_details", pd.DataFrame()), 520)
 
 
+
+with tab_advanced:
+    st.markdown('<div class="section-title">📊 V8.3 Advanced Reports Pack</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="report-card">تقارير إدارية متقدمة لاتخاذ القرار: ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، ملاحظات العملاء، جودة البيانات، الطاقة التشغيلية، والحملات.</div>',
+        unsafe_allow_html=True,
+    )
+
+    exec_summary = reports.get("advanced_executive_summary", pd.DataFrame())
+    branch_rank = reports.get("advanced_branch_ranking", pd.DataFrame())
+    product_value = reports.get("advanced_product_value", pd.DataFrame())
+    filling_intel = reports.get("advanced_filling_intelligence", pd.DataFrame())
+    filling_branch_rank = reports.get("advanced_filling_by_branch_rank", pd.DataFrame())
+    addons_branch = reports.get("advanced_addons_opportunity_branch", pd.DataFrame())
+    addons_product = reports.get("advanced_addons_product_opportunity", pd.DataFrame())
+    notes_keywords = reports.get("advanced_notes_keywords", pd.DataFrame())
+    notes_product = reports.get("advanced_notes_by_product", pd.DataFrame())
+    quality_score = reports.get("advanced_data_quality_score", pd.DataFrame())
+    hourly_capacity = reports.get("advanced_hourly_capacity", pd.DataFrame())
+    campaign_perf = reports.get("advanced_campaign_performance", pd.DataFrame())
+
+    # Executive KPIs
+    ar1, ar2, ar3, ar4 = st.columns(4)
+    with ar1:
+        render_kpi("أفضل فرع بالمبيعات", short_label(top_branch, 26), f"{format_int(top_branch_count)} طلب", "#f59e0b")
+    with ar2:
+        render_kpi("Upsell Rate", f"{upsell_rate:.1f}%", f"{format_int(addon_orders)} طلب بإضافات", "#16a34a")
+    with ar3:
+        render_kpi("Action Rate", f"{(need_action_count / total_orders * 100 if total_orders else 0):.1f}%", f"{format_int(need_action_count)} طلب", "#dc2626")
+    with ar4:
+        render_kpi("أعلى نطاق ساعة", top_hour, f"{format_int(top_hour_count)} طلب", "#0ea5e9")
+
+    display_df(exec_summary, 320, "عرض Executive Summary")
+
+    # Branch Ranking
+    st.markdown('<div class="mini-title">🏬 Branch Ranking Report</div>', unsafe_allow_html=True)
+    if not branch_rank.empty:
+        top_branches_chart = branch_rank.head(12).copy()
+        top_branches_chart["الفرع للعرض"] = top_branches_chart["الفرع"].apply(lambda x: short_label(x, 24))
+        fig = px.bar(
+            top_branches_chart.sort_values("المبيعات"),
+            x="المبيعات",
+            y="الفرع للعرض",
+            orientation="h",
+            text="الطلبات",
+            title="ترتيب الفروع حسب المبيعات",
+            color="نسبة_متابعة_%",
+            color_continuous_scale="RdYlGn_r",
+            hover_data={"الفرع": True, "المبيعات": ":,.0f", "متوسط_الطلب": ":,.0f", "نسبة_Upsell_%": True, "نسبة_متابعة_%": True, "الفرع للعرض": False},
+        )
+        fig.update_traces(texttemplate="%{text} طلب", textposition="outside", cliponaxis=False)
+        st.plotly_chart(make_readable_fig(fig, 560, showlegend=False), use_container_width=True, config=chart_config())
+    display_df(branch_rank, 520, "عرض جدول Branch Ranking")
+
+    # Product Value
+    st.markdown('<div class="mini-title">🧁 Product Value Report</div>', unsafe_allow_html=True)
+    if not product_value.empty:
+        pv = product_value.head(20).copy()
+        pv["المنتج للعرض"] = pv["المنتج"].apply(lambda x: short_label(x, 34))
+        fig = px.scatter(
+            pv,
+            x="الكمية",
+            y="مبيعات_لكل_طلب",
+            size="المبيعات",
+            color="تصنيف_القيمة",
+            hover_name="المنتج",
+            title="خريطة قيمة المنتجات: كمية × مبيعات لكل طلب",
+        )
+        st.plotly_chart(make_readable_fig(fig, 560, showlegend=True), use_container_width=True, config=chart_config())
+
+        top_pv = product_value.head(12).copy()
+        top_pv["المنتج للعرض"] = top_pv["المنتج"].apply(lambda x: short_label(x, 30))
+        fig = px.bar(
+            top_pv.sort_values("المبيعات"),
+            x="المبيعات",
+            y="المنتج للعرض",
+            orientation="h",
+            text="الكمية",
+            title="أعلى المنتجات بالقيمة",
+            color="حصة_المبيعات_%",
+            color_continuous_scale="Blues",
+            hover_data={"المنتج": True, "الطلبات": True, "الكمية": True, "نسبة_متابعة_%": True, "المنتج للعرض": False},
+        )
+        st.plotly_chart(make_readable_fig(fig, 560, showlegend=False), use_container_width=True, config=chart_config())
+    display_df(product_value, 560, "عرض جدول Product Value")
+
+    # Filling Intelligence
+    st.markdown('<div class="mini-title">🍰 Filling Intelligence</div>', unsafe_allow_html=True)
+    if not filling_intel.empty:
+        fv = filling_intel.head(12).copy()
+        fv["الحشوة للعرض"] = fv["الحشوة"].apply(lambda x: short_label(x, 24))
+        fig = px.bar(
+            fv.sort_values("الكمية"),
+            x="الكمية",
+            y="الحشوة للعرض",
+            orientation="h",
+            text="حصة_الكمية_%",
+            title="أولوية الحشوات للإنتاج",
+            color="نسبة_متابعة_%",
+            color_continuous_scale="OrRd",
+            hover_data={"الحشوة": True, "المبيعات": ":,.0f", "نسبة_متابعة_%": True, "الحشوة للعرض": False},
+        )
+        fig.update_traces(texttemplate="%{text}%", textposition="outside", cliponaxis=False)
+        st.plotly_chart(make_readable_fig(fig, 520, showlegend=False), use_container_width=True, config=chart_config())
+    display_df(filling_intel, 440, "عرض جدول Filling Intelligence")
+    display_df(filling_branch_rank, 440, "عرض ترتيب الحشوات داخل كل فرع")
+
+    # Add-ons Opportunity
+    st.markdown('<div class="mini-title">🎈 Add-ons Opportunity</div>', unsafe_allow_html=True)
+    if not addons_branch.empty:
+        ab = addons_branch.copy()
+        ab["الفرع للعرض"] = ab["الفرع"].apply(lambda x: short_label(x, 24))
+        fig = px.bar(
+            ab.sort_values("نسبة_Upsell_%"),
+            x="الفرع للعرض",
+            y="نسبة_Upsell_%",
+            text="طلبات_بدون_إضافات",
+            color="فرصة",
+            title="فرص رفع Upsell حسب الفرع",
+            hover_data={"الفرع": True, "الطلبات": True, "طلبات_بإضافات": True, "فرق_المتوسط": ":,.0f", "الفرع للعرض": False},
+        )
+        fig.update_traces(texttemplate="%{y:.1f}% | بدون إضافات: %{text}", textposition="outside", cliponaxis=False)
+        st.plotly_chart(make_readable_fig(fig, 520, showlegend=True), use_container_width=True, config=chart_config())
+    display_df(addons_branch, 420, "عرض فرص الإضافات حسب الفرع")
+    display_df(addons_product, 500, "عرض فرص الإضافات حسب المنتج")
+
+    # Notes Intelligence
+    st.markdown('<div class="mini-title">📝 Customer Notes Intelligence</div>', unsafe_allow_html=True)
+    if not notes_keywords.empty:
+        fig = px.bar(
+            notes_keywords.sort_values("عدد الصفوف"),
+            x="عدد الصفوف",
+            y="الكلمة/التصنيف",
+            orientation="h",
+            text="نسبة من الصفوف %",
+            title="تصنيف ملاحظات العملاء",
+            color="عدد الصفوف",
+            color_continuous_scale="Purples",
+        )
+        fig.update_traces(texttemplate="%{text}%", textposition="outside", cliponaxis=False)
+        st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
+    display_df(notes_keywords, 320, "عرض كلمات وملاحظات العملاء")
+    display_df(notes_product, 460, "عرض المنتجات ذات الملاحظات الأعلى")
+
+    # Data Quality Score
+    st.markdown('<div class="mini-title">🧹 Data Quality Score</div>', unsafe_allow_html=True)
+    if not quality_score.empty:
+        qs = quality_score.copy()
+        qs["الفرع للعرض"] = qs["الفرع"].apply(lambda x: short_label(x, 24))
+        fig = px.bar(
+            qs.sort_values("Quality Score"),
+            x="Quality Score",
+            y="الفرع للعرض",
+            orientation="h",
+            text="التقييم",
+            title="تقييم جودة البيانات حسب الفرع",
+            color="Quality Score",
+            color_continuous_scale="RdYlGn",
+            hover_data={"الفرع": True, "إجمالي_مشاكل_الجودة": True, "مشاكل_لكل_100_صف": True, "الفرع للعرض": False},
+        )
+        st.plotly_chart(make_readable_fig(fig, 520, showlegend=False), use_container_width=True, config=chart_config())
+    display_df(quality_score, 420, "عرض Data Quality Score")
+
+    # Hourly Capacity
+    st.markdown('<div class="mini-title">⏰ Hourly Capacity Report</div>', unsafe_allow_html=True)
+    if not hourly_capacity.empty:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=hourly_capacity["نطاق ساعة الاستلام"], y=hourly_capacity["الطلبات"], name="الطلبات"))
+        if "الكمية" in hourly_capacity.columns:
+            fig.add_trace(go.Scatter(x=hourly_capacity["نطاق ساعة الاستلام"], y=hourly_capacity["الكمية"], name="الكمية", mode="lines+markers", yaxis="y2"))
+        fig.update_layout(
+            title="الطاقة التشغيلية حسب نطاق الساعة",
+            yaxis=dict(title="عدد الطلبات"),
+            yaxis2=dict(title="الكمية", overlaying="y", side="right"),
+        )
+        st.plotly_chart(make_readable_fig(fig, 560, showlegend=True), use_container_width=True, config=chart_config())
+    display_df(hourly_capacity, 420, "عرض Hourly Capacity")
+
+    # Campaign Performance
+    st.markdown('<div class="mini-title">🎯 Campaign Performance Advanced</div>', unsafe_allow_html=True)
+    if not campaign_perf.empty:
+        cp = campaign_perf.copy()
+        fig = px.bar(
+            cp,
+            x="الحملة",
+            y="مبيعات_الأصناف",
+            text="الطلبات",
+            color="نسبة_متابعة_%",
+            color_continuous_scale="RdYlGn_r",
+            title="أداء الحملات حسب المبيعات والمتابعة",
+            hover_data={"أفضل_فرع": True, "أفضل_منتج": True, "أفضل_حشوة": True},
+        )
+        fig.update_traces(texttemplate="%{text} طلب", textposition="outside", cliponaxis=False)
+        st.plotly_chart(make_readable_fig(fig, 520, showlegend=False), use_container_width=True, config=chart_config())
+    display_df(campaign_perf, 440, "عرض Campaign Performance")
+
+
 with tab_export:
     st.markdown('<div class="section-title">⬇️ Export Center</div>', unsafe_allow_html=True)
     summary_rows = [
@@ -2352,12 +2914,12 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.2",
+        "⬇️ تحميل Excel شامل كل التقارير V8.3",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_2.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_3.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
-        '<div class="note-box">الملف يحتوي على Executive Summary، Daily Operations، Production Queue، Action Center، Sales، Products، Fillings، Add-ons، Need Action، Campaigns، Data Quality، Multi Item Orders، والبيانات المفلترة.</div>',
+        '<div class="note-box">الملف يحتوي على Executive Summary، Advanced Reports Pack، Branch Ranking، Product Value، Filling Intelligence، Add-ons Opportunity، Customer Notes، Data Quality Score، Hourly Capacity، Campaign Performance، وكل تقارير التشغيل السابقة.</div>',
         unsafe_allow_html=True,
     )
