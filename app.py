@@ -1,4 +1,5 @@
 import re
+import html
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
 
@@ -14,11 +15,11 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V7 - Operations Control Center
+# MAD Orders Dashboard V8 - Production & Action Center
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V7.3 Readable Charts + Fillings Reports"
+APP_VERSION = "V8 Production & Action Center"
 
 
 # =========================
@@ -1003,6 +1004,8 @@ def build_excel_export(reports, filters_summary):
         write_excel_sheet(writer, filters_summary, "Executive Summary")
         sheet_map = {
             "orders_active": "Daily Operations",
+            "production_queue": "Production Queue",
+            "action_center": "Action Center",
             "sales_by_branch": "Sales by Branch",
             "sales_by_hour": "Sales by Hour",
             "status_report": "Status Report",
@@ -1039,6 +1042,224 @@ def branch_prep_excel(branch_df, branch_name):
     return output
 
 
+def normalize_phone_for_whatsapp(phone):
+    """Convert local Saudi mobile numbers into WhatsApp-friendly international digits."""
+    digits = re.sub(r"\D+", "", normalize_arabic_digits(phone))
+    if not digits:
+        return ""
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if digits.startswith("9665") and len(digits) >= 12:
+        return digits[:12]
+    if digits.startswith("05") and len(digits) >= 10:
+        return "966" + digits[1:10]
+    if digits.startswith("5") and len(digits) >= 9:
+        return "966" + digits[:9]
+    return digits
+
+
+def whatsapp_url(phone):
+    normalized = normalize_phone_for_whatsapp(phone)
+    return f"https://wa.me/{normalized}" if normalized else ""
+
+
+def html_escape(value):
+    return html.escape("" if pd.isna(value) else str(value))
+
+
+def build_production_queue(active_items):
+    """Production-friendly item list ordered by pickup time."""
+    if active_items is None or active_items.empty:
+        return pd.DataFrame()
+
+    q = active_items.copy()
+    q["نوع الصنف"] = q["إضافة؟"].map(lambda x: "إضافة" if bool(x) else "منتج رئيسي")
+    q["واتساب"] = q["رقم الجوال المستخرج"].apply(whatsapp_url)
+    q["أولوية"] = q["يحتاج متابعة؟"].map(lambda x: "عالية" if bool(x) else "عادية")
+    q["وقت عرض"] = q["وقت الاستلام الأصلي"].replace("", "بدون وقت")
+    q["تاريخ عرض"] = q["تاريخ التوصيل الأصلي"].replace("", "بدون تاريخ")
+
+    cols = [
+        "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
+        "الحالة", "العميل", "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم",
+        "أولوية", "سبب المتابعة", "رقم الجوال المستخرج", "واتساب", "الملاحظة",
+        "تاريخ ووقت الاستلام", "ساعة رقم"
+    ]
+    q = q[[c for c in cols if c in q.columns]].copy()
+
+    sort_cols = [c for c in ["تاريخ ووقت الاستلام", "الفرع", "رقم الطلب الموحد"] if c in q.columns]
+    if sort_cols:
+        q = q.sort_values(sort_cols, na_position="last")
+
+    return q
+
+
+def build_action_center(active_items):
+    """Action-focused table: photos, contact, phone, writing, design, data issues."""
+    if active_items is None or active_items.empty:
+        return pd.DataFrame()
+
+    a = active_items.copy()
+
+    missing_date = a["تاريخ التوصيل الأصلي"].astype(str).str.strip().eq("") if "تاريخ التوصيل الأصلي" in a.columns else False
+    missing_time = a["وقت الاستلام الأصلي"].astype(str).str.strip().eq("") if "وقت الاستلام الأصلي" in a.columns else False
+    missing_branch = a["الفرع"].astype(str).eq("العقيق") if "الفرع" in a.columns else False
+    action_mask = a["يحتاج متابعة؟"].astype(bool) | missing_date | missing_time | missing_branch
+    a = a[action_mask].copy()
+
+    if a.empty:
+        return pd.DataFrame()
+
+    def enrich_reasons(row):
+        reasons = str(row.get("سبب المتابعة", "")).strip()
+        parts = [p.strip() for p in reasons.split("،") if p.strip()]
+        if not str(row.get("تاريخ التوصيل الأصلي", "")).strip():
+            parts.append("تاريخ ناقص")
+        if not str(row.get("وقت الاستلام الأصلي", "")).strip():
+            parts.append("وقت ناقص")
+        if str(row.get("الفرع", "")) == "العقيق":
+            parts.append("فرع غير محدد")
+        seen = []
+        for p in parts:
+            if p not in seen:
+                seen.append(p)
+        return "، ".join(seen)
+
+    def priority(reasons):
+        txt = str(reasons)
+        if any(k in txt for k in ["ملاحظة حساسة", "تاريخ ناقص", "وقت ناقص", "فرع غير محدد"]):
+            return "حرجة"
+        if any(k in txt for k in ["يحتاج صورة", "يحتاج تواصل", "يوجد رقم جوال"]):
+            return "عالية"
+        return "متوسطة"
+
+    a["نوع الإجراء"] = a.apply(enrich_reasons, axis=1)
+    a["الأولوية"] = a["نوع الإجراء"].apply(priority)
+    a["حالة المتابعة"] = "لم يبدأ"
+    a["ملاحظة داخلية"] = ""
+    a["واتساب"] = a["رقم الجوال المستخرج"].apply(whatsapp_url)
+    a["وقت عرض"] = a["وقت الاستلام الأصلي"].replace("", "بدون وقت")
+    a["تاريخ عرض"] = a["تاريخ التوصيل الأصلي"].replace("", "بدون تاريخ")
+
+    cols = [
+        "الأولوية", "حالة المتابعة", "نوع الإجراء", "وقت عرض", "تاريخ عرض",
+        "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
+        "المنتج", "الحشوة", "الكمية رقم", "رقم الجوال المستخرج", "واتساب",
+        "ملاحظة داخلية", "الملاحظة", "تاريخ ووقت الاستلام", "ساعة رقم"
+    ]
+    a = a[[c for c in cols if c in a.columns]].drop_duplicates().copy()
+
+    sort_priority = {"حرجة": 0, "عالية": 1, "متوسطة": 2}
+    a["_priority_sort"] = a["الأولوية"].map(sort_priority).fillna(9)
+    sort_cols = [c for c in ["_priority_sort", "تاريخ ووقت الاستلام", "الفرع"] if c in a.columns]
+    if sort_cols:
+        a = a.sort_values(sort_cols, na_position="last")
+    return a.drop(columns=["_priority_sort"], errors="ignore")
+
+
+def build_branch_prep_detail(queue_df, branch):
+    if queue_df is None or queue_df.empty or not branch:
+        return pd.DataFrame()
+    b = queue_df[queue_df["الفرع"].eq(branch)].copy() if "الفرع" in queue_df.columns else pd.DataFrame()
+    cols = [
+        "وقت عرض", "رقم الطلب الظاهر", "الحالة", "العميل", "نوع الصنف",
+        "المنتج", "الحشوة", "الكمية رقم", "أولوية", "سبب المتابعة",
+        "رقم الجوال المستخرج", "الملاحظة"
+    ]
+    return b[[c for c in cols if c in b.columns]]
+
+
+def build_multi_sheet_excel(sheet_map):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for sheet_name, df in sheet_map.items():
+            write_excel_sheet(writer, df if isinstance(df, pd.DataFrame) else pd.DataFrame(), sheet_name)
+    output.seek(0)
+    return output
+
+
+def build_branch_workbook(branch, queue_df, action_df, active_items):
+    branch_queue = queue_df[queue_df["الفرع"].eq(branch)].copy() if queue_df is not None and not queue_df.empty and "الفرع" in queue_df.columns else pd.DataFrame()
+    branch_action = action_df[action_df["الفرع"].eq(branch)].copy() if action_df is not None and not action_df.empty and "الفرع" in action_df.columns else pd.DataFrame()
+    branch_items = active_items[active_items["الفرع"].eq(branch)].copy() if active_items is not None and not active_items.empty and "الفرع" in active_items.columns else pd.DataFrame()
+
+    if not branch_items.empty:
+        products = branch_items[~branch_items["إضافة؟"]].groupby(["المنتج", "الحشوة"], dropna=False).agg(
+            الكمية=("الكمية رقم", "sum"),
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+        ).reset_index().sort_values(["الكمية", "عدد_الطلبات"], ascending=False)
+
+        fillings = branch_items[branch_items["الحشوة"].astype(str).str.strip().ne("")].groupby("الحشوة", dropna=False).agg(
+            الكمية=("الكمية رقم", "sum"),
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+        ).reset_index().sort_values("الكمية", ascending=False)
+
+        addons = branch_items[branch_items["إضافة؟"]].groupby("تصنيف الإضافة", dropna=False).agg(
+            الكمية=("الكمية رقم", "sum"),
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+        ).reset_index().sort_values("الكمية", ascending=False)
+
+        by_hour = branch_items.drop_duplicates("رقم الطلب الموحد").groupby("الساعة", dropna=False).agg(
+            عدد_الطلبات=("رقم الطلب الموحد", "nunique"),
+        ).reset_index()
+    else:
+        products = fillings = addons = by_hour = pd.DataFrame()
+
+    summary = pd.DataFrame([
+        {"البند": "الفرع", "القيمة": branch},
+        {"البند": "عدد صفوف التجهيز", "القيمة": len(branch_queue)},
+        {"البند": "طلبات تحتاج متابعة", "القيمة": len(branch_action)},
+        {"البند": "عدد المنتجات", "القيمة": len(products)},
+        {"البند": "عدد الحشوات", "القيمة": len(fillings)},
+    ])
+
+    return build_multi_sheet_excel({
+        "Branch Summary": summary,
+        "Production Queue": branch_queue,
+        "Need Action": branch_action,
+        "Products Prep": products,
+        "Fillings Prep": fillings,
+        "Add-ons Prep": addons,
+        "Orders by Hour": by_hour,
+    })
+
+
+def render_print_cards(print_df, limit=120):
+    if print_df is None or print_df.empty:
+        st.info("لا توجد بيانات للطباعة ضمن الفلاتر الحالية.")
+        return
+    shown = print_df.head(limit)
+    for _, row in shown.iterrows():
+        order_no = html_escape(row.get("رقم الطلب الظاهر", ""))
+        branch = html_escape(row.get("الفرع", ""))
+        time_v = html_escape(row.get("وقت عرض", row.get("وقت الاستلام الأصلي", "")))
+        status = html_escape(row.get("الحالة", ""))
+        customer = html_escape(row.get("العميل", ""))
+        product = html_escape(row.get("المنتج", ""))
+        variety = html_escape(row.get("الحشوة", ""))
+        qty = html_escape(row.get("الكمية رقم", ""))
+        action = html_escape(row.get("سبب المتابعة", row.get("نوع الإجراء", "")))
+        phone = html_escape(row.get("رقم الجوال المستخرج", ""))
+        note = html_escape(row.get("الملاحظة", ""))
+
+        st.markdown(
+            f"""
+            <div class="print-card">
+                <b>وقت:</b> {time_v} &nbsp; | &nbsp; <b>فرع:</b> {branch} &nbsp; | &nbsp; <b>طلب:</b> {order_no} &nbsp; | &nbsp; <b>الحالة:</b> {status}<br>
+                <b>العميل:</b> {customer} &nbsp; | &nbsp; <b>جوال:</b> {phone}<br>
+                <b>المنتج:</b> {product}<br>
+                <b>الحشوة:</b> {variety} &nbsp; | &nbsp; <b>الكمية:</b> {qty}<br>
+                <b>متابعة:</b> {action}
+                <div class="print-note">{note}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    if len(print_df) > limit:
+        st.warning(f"تم عرض أول {limit} صف فقط للطباعة. استخدم Excel للعدد الكامل.")
+
+
+
 # =========================
 # Header
 # =========================
@@ -1046,7 +1267,7 @@ st.markdown(
     f"""
     <div class="hero">
         <h1>🧁 MAD Orders Control Center</h1>
-        <p>{APP_VERSION} — لوحة تشغيل يومية للمبيعات، الفروع، تجهيز الطلبات، الإضافات، الحملات، جودة البيانات، والطلبات التي تحتاج متابعة.</p>
+        <p>{APP_VERSION} — لوحة تشغيل يومية للمبيعات، التجهيز، متابعة الطلبات، أرقام التواصل، الطباعة، الإضافات، الحشوات، الحملات، وجودة البيانات.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -1170,6 +1391,10 @@ reports = build_reports(filtered, orders_filtered)
 active_items = reports["items_active"]
 active_orders = reports["orders_active"]
 
+# V8 operational reports
+reports["production_queue"] = build_production_queue(active_items)
+reports["action_center"] = build_action_center(active_items)
+
 # Core KPIs
 total_rows = len(filtered)
 total_orders = int(active_orders["رقم الطلب الموحد"].nunique()) if not active_orders.empty else 0
@@ -1224,7 +1449,10 @@ with k5:
 # =========================
 st.markdown('<div class="section-title">🚦 تنبيهات ذكية</div>', unsafe_allow_html=True)
 alerts = []
-if need_action_count > 0:
+action_center_count = len(reports.get("action_center", pd.DataFrame()))
+if action_center_count > 0:
+    alerts.append(f"🚨 Action Center: يوجد {format_int(action_center_count)} صف يحتاج إجراء تشغيلي.")
+elif need_action_count > 0:
     alerts.append(f"⚠️ يوجد {format_int(need_action_count)} طلب يحتاج متابعة مع العميل.")
 if missing_date_count > 0:
     alerts.append(f"⚠️ يوجد {format_int(missing_date_count)} صف بدون تاريخ توصيل.")
@@ -1246,6 +1474,9 @@ else:
 # =========================
 (
     tab_daily,
+    tab_production,
+    tab_action_center,
+    tab_print,
     tab_prep,
     tab_sales,
     tab_products,
@@ -1259,6 +1490,9 @@ else:
     tab_export,
 ) = st.tabs([
     "📍 Daily Ops",
+    "🏭 Production Queue",
+    "✅ Action Center",
+    "🖨️ Print View",
     "🧾 Branch Prep",
     "💰 Sales",
     "🧁 Products",
@@ -1313,6 +1547,256 @@ with tab_daily:
         ops_view = pd.DataFrame(columns=ops_view_cols)
 
     display_df(ops_view, 420)
+
+
+
+with tab_production:
+    st.markdown('<div class="section-title">🏭 Production Queue</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="production-card">صفحة تجهيز يومية مرتبة حسب وقت الاستلام. استخدمها للفروع والإنتاج لمعرفة المطلوب الآن، وما يحتاج متابعة قبل التجهيز.</div>',
+        unsafe_allow_html=True,
+    )
+
+    queue = reports.get("production_queue", pd.DataFrame()).copy()
+
+    if queue.empty:
+        st.info("لا توجد بيانات تجهيز ضمن الفلاتر الحالية.")
+    else:
+        qf1, qf2, qf3, qf4 = st.columns(4)
+        with qf1:
+            q_branches = ["الكل"] + sorted(queue["الفرع"].dropna().unique().tolist()) if "الفرع" in queue.columns else ["الكل"]
+            q_branch = st.selectbox("فرع التجهيز", q_branches, key="v8_queue_branch")
+        with qf2:
+            q_hours = ["الكل"] + sorted(queue["وقت عرض"].dropna().unique().tolist()) if "وقت عرض" in queue.columns else ["الكل"]
+            q_hour = st.selectbox("وقت الاستلام", q_hours, key="v8_queue_hour")
+        with qf3:
+            q_statuses = ["الكل"] + sorted(queue["الحالة"].dropna().unique().tolist()) if "الحالة" in queue.columns else ["الكل"]
+            q_status = st.selectbox("الحالة", q_statuses, key="v8_queue_status")
+        with qf4:
+            q_priority = st.selectbox("الأولوية", ["الكل", "عالية", "عادية"], key="v8_queue_priority")
+
+        qf5, qf6, qf7 = st.columns(3)
+        with qf5:
+            show_addons_q = st.checkbox("إظهار الإضافات", value=True, key="v8_queue_addons")
+        with qf6:
+            need_action_q = st.checkbox("فقط ما يحتاج متابعة", value=False, key="v8_queue_need_action")
+        with qf7:
+            q_search = st.text_input("بحث داخل التجهيز", placeholder="رقم طلب / منتج / عميل / جوال", key="v8_queue_search")
+
+        queue_view = queue.copy()
+        if q_branch != "الكل" and "الفرع" in queue_view.columns:
+            queue_view = queue_view[queue_view["الفرع"].eq(q_branch)]
+        if q_hour != "الكل" and "وقت عرض" in queue_view.columns:
+            queue_view = queue_view[queue_view["وقت عرض"].eq(q_hour)]
+        if q_status != "الكل" and "الحالة" in queue_view.columns:
+            queue_view = queue_view[queue_view["الحالة"].eq(q_status)]
+        if q_priority != "الكل" and "أولوية" in queue_view.columns:
+            queue_view = queue_view[queue_view["أولوية"].eq(q_priority)]
+        if not show_addons_q and "نوع الصنف" in queue_view.columns:
+            queue_view = queue_view[queue_view["نوع الصنف"].ne("إضافة")]
+        if need_action_q and "أولوية" in queue_view.columns:
+            queue_view = queue_view[queue_view["أولوية"].eq("عالية")]
+        if q_search.strip():
+            q = q_search.strip().lower()
+            blob_cols = [c for c in ["رقم الطلب الظاهر", "رقم الطلب الموحد", "العميل", "المنتج", "الحشوة", "رقم الجوال المستخرج", "الملاحظة"] if c in queue_view.columns]
+            blob = queue_view[blob_cols].astype(str).agg(" ".join, axis=1).str.lower() if blob_cols else pd.Series([], dtype=str)
+            queue_view = queue_view[blob.str.contains(re.escape(q), na=False)]
+
+        pq1, pq2, pq3, pq4 = st.columns(4)
+        with pq1:
+            render_kpi("صفوف التجهيز", format_int(len(queue_view)), "Items", "#0ea5e9")
+        with pq2:
+            order_count_q = queue_view["رقم الطلب الموحد"].nunique() if "رقم الطلب الموحد" in queue_view.columns else 0
+            render_kpi("عدد الطلبات", format_int(order_count_q), "Unique Orders", "#2563eb")
+        with pq3:
+            qty_q = queue_view["الكمية رقم"].sum() if "الكمية رقم" in queue_view.columns else 0
+            render_kpi("إجمالي الكمية", format_int(qty_q), "Qty", "#16a34a")
+        with pq4:
+            act_q = queue_view["أولوية"].eq("عالية").sum() if "أولوية" in queue_view.columns else 0
+            render_kpi("تحتاج متابعة", format_int(act_q), "High priority", "#dc2626")
+
+        if not queue_view.empty:
+            qc1, qc2 = st.columns([1, 1])
+            with qc1:
+                by_hour_q = queue_view.groupby("وقت عرض", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
+                fig = px.bar(by_hour_q, x="وقت عرض", y="عدد الطلبات", text="عدد الطلبات", title="ضغط التجهيز حسب الوقت")
+                st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
+            with qc2:
+                by_branch_q = queue_view.groupby("الفرع", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
+                fig = px.bar(by_branch_q, x="الفرع", y="عدد الطلبات", text="عدد الطلبات", title="طلبات التجهيز حسب الفرع")
+                st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
+
+        st.markdown('<div class="mini-title">جدول التجهيز</div>', unsafe_allow_html=True)
+        view_cols = [c for c in [
+            "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "الحالة", "العميل",
+            "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم", "أولوية",
+            "سبب المتابعة", "رقم الجوال المستخرج", "الملاحظة"
+        ] if c in queue_view.columns]
+        display_df(queue_view[view_cols] if view_cols else queue_view, 620)
+
+        st.download_button(
+            "⬇️ تحميل Production Queue Excel",
+            data=build_multi_sheet_excel({"Production Queue": queue_view}),
+            file_name="Production_Queue_V8.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_production_queue_v8",
+        )
+
+
+with tab_action_center:
+    st.markdown('<div class="section-title">✅ Action Center</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="action-card">هذه الصفحة تجمع الطلبات التي تحتاج إجراء: صورة، تواصل، رقم جوال، كتابة خاصة، تعديل تصميم، مشكلة، أو بيانات ناقصة. التعديل هنا مؤقت داخل الجلسة فقط، والحفظ الدائم يكون في V9 عبر Supabase أو Google Sheet Tracking.</div>',
+        unsafe_allow_html=True,
+    )
+
+    action_df = reports.get("action_center", pd.DataFrame()).copy()
+
+    if action_df.empty:
+        st.success("✅ لا توجد طلبات تحتاج إجراء ضمن الفلاتر الحالية.")
+    else:
+        af1, af2, af3, af4 = st.columns(4)
+        with af1:
+            a_branches = ["الكل"] + sorted(action_df["الفرع"].dropna().unique().tolist()) if "الفرع" in action_df.columns else ["الكل"]
+            a_branch = st.selectbox("فرع", a_branches, key="v8_action_branch")
+        with af2:
+            a_priorities = ["الكل"] + sorted(action_df["الأولوية"].dropna().unique().tolist()) if "الأولوية" in action_df.columns else ["الكل"]
+            a_priority = st.selectbox("الأولوية", a_priorities, key="v8_action_priority")
+        with af3:
+            reason_options = ["الكل"]
+            if "نوع الإجراء" in action_df.columns:
+                reason_set = []
+                for reasons in action_df["نوع الإجراء"].astype(str):
+                    for r in [x.strip() for x in reasons.split("،") if x.strip()]:
+                        reason_set.append(r)
+                reason_options += sorted(set(reason_set))
+            a_reason = st.selectbox("نوع الإجراء", reason_options, key="v8_action_reason")
+        with af4:
+            a_search = st.text_input("بحث", placeholder="رقم طلب / جوال / عميل / منتج", key="v8_action_search")
+
+        action_view = action_df.copy()
+        if a_branch != "الكل" and "الفرع" in action_view.columns:
+            action_view = action_view[action_view["الفرع"].eq(a_branch)]
+        if a_priority != "الكل" and "الأولوية" in action_view.columns:
+            action_view = action_view[action_view["الأولوية"].eq(a_priority)]
+        if a_reason != "الكل" and "نوع الإجراء" in action_view.columns:
+            action_view = action_view[action_view["نوع الإجراء"].astype(str).str.contains(re.escape(a_reason), na=False)]
+        if a_search.strip():
+            q = a_search.strip().lower()
+            blob_cols = [c for c in ["رقم الطلب الظاهر", "رقم الطلب الموحد", "العميل", "المنتج", "رقم الجوال المستخرج", "الملاحظة"] if c in action_view.columns]
+            blob = action_view[blob_cols].astype(str).agg(" ".join, axis=1).str.lower() if blob_cols else pd.Series([], dtype=str)
+            action_view = action_view[blob.str.contains(re.escape(q), na=False)]
+
+        ac1, ac2, ac3, ac4 = st.columns(4)
+        with ac1:
+            render_kpi("إجمالي الإجراءات", format_int(len(action_view)), "Rows", "#dc2626")
+        with ac2:
+            high_count = action_view["الأولوية"].isin(["حرجة", "عالية"]).sum() if "الأولوية" in action_view.columns else 0
+            render_kpi("حرجة / عالية", format_int(high_count), "Priority", "#f97316")
+        with ac3:
+            phone_count = action_view["رقم الجوال المستخرج"].astype(str).str.len().gt(0).sum() if "رقم الجوال المستخرج" in action_view.columns else 0
+            render_kpi("فيها جوال", format_int(phone_count), "WhatsApp ready", "#16a34a")
+        with ac4:
+            orders_count = action_view["رقم الطلب الموحد"].nunique() if "رقم الطلب الموحد" in action_view.columns else 0
+            render_kpi("عدد الطلبات", format_int(orders_count), "Unique Orders", "#2563eb")
+
+        if not action_view.empty:
+            reasons_expanded = []
+            for reasons in action_view["نوع الإجراء"].astype(str):
+                for r in [x.strip() for x in reasons.split("،") if x.strip()]:
+                    reasons_expanded.append(r)
+            if reasons_expanded:
+                reasons_df = pd.Series(reasons_expanded).value_counts().reset_index()
+                reasons_df.columns = ["نوع الإجراء", "عدد الحالات"]
+                fig = px.bar(reasons_df, x="نوع الإجراء", y="عدد الحالات", text="عدد الحالات", title="أسباب الإجراءات")
+                st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
+
+        st.markdown('<div class="mini-title">جدول المتابعة التفاعلي</div>', unsafe_allow_html=True)
+        editor_cols = [c for c in [
+            "الأولوية", "حالة المتابعة", "نوع الإجراء", "وقت عرض", "الفرع",
+            "رقم الطلب الظاهر", "الحالة", "العميل", "المنتج", "الحشوة",
+            "رقم الجوال المستخرج", "واتساب", "ملاحظة داخلية", "الملاحظة"
+        ] if c in action_view.columns]
+        action_editor = action_view[editor_cols].copy() if editor_cols else action_view.copy()
+
+        try:
+            edited_action = st.data_editor(
+                action_editor,
+                use_container_width=True,
+                height=620,
+                column_config={
+                    "واتساب": st.column_config.LinkColumn("واتساب", display_text="فتح واتساب"),
+                    "حالة المتابعة": st.column_config.SelectboxColumn(
+                        "حالة المتابعة",
+                        options=[
+                            "لم يبدأ", "تم التواصل", "بانتظار الصورة", "تم استلام الصورة",
+                            "تم إرسالها للإنتاج", "تم التجهيز", "جاهز للتسليم",
+                            "مشكلة / يحتاج تدخل"
+                        ],
+                    ),
+                    "ملاحظة داخلية": st.column_config.TextColumn("ملاحظة داخلية"),
+                },
+                disabled=[c for c in action_editor.columns if c not in ["حالة المتابعة", "ملاحظة داخلية"]],
+                key="action_center_editor_v8",
+            )
+        except Exception:
+            edited_action = action_editor
+            display_df(action_editor, 620)
+
+        st.download_button(
+            "⬇️ تحميل Action Center Excel",
+            data=build_multi_sheet_excel({"Action Center": edited_action}),
+            file_name="Action_Center_V8.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_action_center_v8",
+        )
+
+
+with tab_print:
+    st.markdown('<div class="section-title">🖨️ Print View</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="readability-note">هذه الصفحة مصممة للطباعة أو Screenshot من الجوال. من المتصفح استخدم Ctrl+P أو Print. الجداول هنا مختصرة وواضحة بدون شارتات.</div>',
+        unsafe_allow_html=True,
+    )
+
+    print_source = reports.get("production_queue", pd.DataFrame()).copy()
+    if print_source.empty:
+        st.info("لا توجد بيانات للطباعة ضمن الفلاتر الحالية.")
+    else:
+        pf1, pf2, pf3 = st.columns(3)
+        with pf1:
+            p_branches = ["الكل"] + sorted(print_source["الفرع"].dropna().unique().tolist()) if "الفرع" in print_source.columns else ["الكل"]
+            p_branch = st.selectbox("فرع للطباعة", p_branches, key="v8_print_branch")
+        with pf2:
+            p_need_action_only = st.checkbox("فقط ما يحتاج متابعة", value=False, key="v8_print_action_only")
+        with pf3:
+            p_hide_addons = st.checkbox("إخفاء الإضافات", value=False, key="v8_print_hide_addons")
+
+        print_view = print_source.copy()
+        if p_branch != "الكل" and "الفرع" in print_view.columns:
+            print_view = print_view[print_view["الفرع"].eq(p_branch)]
+        if p_need_action_only and "أولوية" in print_view.columns:
+            print_view = print_view[print_view["أولوية"].eq("عالية")]
+        if p_hide_addons and "نوع الصنف" in print_view.columns:
+            print_view = print_view[print_view["نوع الصنف"].ne("إضافة")]
+
+        pp1, pp2, pp3 = st.columns(3)
+        with pp1:
+            render_kpi("صفوف الطباعة", format_int(len(print_view)), "", "#0ea5e9")
+        with pp2:
+            render_kpi("طلبات", format_int(print_view["رقم الطلب الموحد"].nunique() if "رقم الطلب الموحد" in print_view.columns else 0), "", "#2563eb")
+        with pp3:
+            render_kpi("تحتاج متابعة", format_int(print_view["أولوية"].eq("عالية").sum() if "أولوية" in print_view.columns else 0), "", "#dc2626")
+
+        render_print_cards(print_view, limit=140)
+
+        st.download_button(
+            "⬇️ تحميل Print View Excel",
+            data=build_multi_sheet_excel({"Print View": print_view}),
+            file_name="Print_View_V8.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_print_view_v8",
+        )
 
 
 with tab_prep:
@@ -1677,12 +2161,12 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V7.3",
+        "⬇️ تحميل Excel شامل كل التقارير V8",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V7_2.xlsx",
+        file_name="MAD_Orders_Control_Center_V8.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
-        '<div class="note-box">الملف يحتوي على Executive Summary، Daily Operations، Sales، Products، Fillings، Add-ons، Need Action، Campaigns، Data Quality، Multi Item Orders، والبيانات المفلترة.</div>',
+        '<div class="note-box">الملف يحتوي على Executive Summary، Daily Operations، Production Queue، Action Center، Sales، Products، Fillings، Add-ons، Need Action، Campaigns، Data Quality، Multi Item Orders، والبيانات المفلترة.</div>',
         unsafe_allow_html=True,
     )
