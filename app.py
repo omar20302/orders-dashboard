@@ -101,7 +101,7 @@ def read_uploaded_file(uploaded_file):
 def extract_branch(chef_name):
     """
     استخراج اسم الفرع من خانة اسم الشيف.
-    لو مفيش اسم فرع واضح يرجع: بدون فرع محدد
+    لو مفيش اسم فرع واضح يرجع: العقيق
     """
     text = str(chef_name).strip()
     lower_text = text.lower()
@@ -119,7 +119,7 @@ def extract_branch(chef_name):
             if keyword.lower() in lower_text:
                 return branch
 
-    return "بدون فرع محدد"
+    return "العقيق"
 
 
 def parse_datetime(delivery_date, pickup_time):
@@ -350,7 +350,7 @@ def create_excel_file(
         str(x) for x in active_rows["Calc_Branch"].dropna().unique().tolist()
         if str(x).strip() != ""
     ]
-    branches = sorted(branches) or ["بدون فرع محدد"]
+    branches = sorted(branches) or ["العقيق"]
 
     if "رقم الساعة" in active_rows.columns:
         hour_df = (
