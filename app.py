@@ -15,11 +15,11 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V8.1 - Clean UI + Production Center
+# MAD Orders Dashboard V8.2 - Readable Filters + Production Center
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.1 Clean UI + Hidden Tables"
+APP_VERSION = "V8.2 Readable Filters + Hour Ranges"
 
 
 # =========================
@@ -226,6 +226,68 @@ st.markdown(
     .js-plotly-plot .plotly .heatmaplayer text {
         font-weight: 700 !important;
         fill: rgba(15, 23, 42, .88) !important;
+    }
+
+    
+    /* =========================
+       V8.2 Readable filters
+       ========================= */
+
+    div[data-testid="stWidgetLabel"],
+    div[data-testid="stWidgetLabel"] p,
+    div[data-testid="stWidgetLabel"] label,
+    .stSelectbox label,
+    .stTextInput label,
+    .stCheckbox label,
+    .stRadio label,
+    .stDateInput label,
+    .stMultiSelect label,
+    .stFileUploader label {
+        color: #f8fafc !important;
+        opacity: 1 !important;
+        font-weight: 800 !important;
+        font-size: 15px !important;
+        text-shadow: 0 1px 1px rgba(0,0,0,.35) !important;
+    }
+
+    .stMarkdown p,
+    div[data-testid="stMarkdownContainer"] p {
+        color: #e5e7eb !important;
+        opacity: 1 !important;
+    }
+
+    div[data-baseweb="select"] > div {
+        border: 1px solid rgba(248,250,252,.28) !important;
+        box-shadow: 0 0 0 1px rgba(15,23,42,.08) !important;
+    }
+
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] input,
+    .stTextInput input {
+        font-weight: 700 !important;
+    }
+
+    .stCheckbox p,
+    .stCheckbox span {
+        color: #f8fafc !important;
+        opacity: 1 !important;
+        font-weight: 700 !important;
+    }
+
+    .production-card,
+    .action-card,
+    .readability-note,
+    .note-box {
+        color: #f8fafc !important;
+        opacity: 1 !important;
+    }
+
+    .production-card *,
+    .action-card *,
+    .readability-note *,
+    .note-box * {
+        color: inherit !important;
+        opacity: 1 !important;
     }
 
     </style>
@@ -952,6 +1014,47 @@ def heatmap_height(row_count, min_height=520, max_height=900, row_px=44):
     return max(min_height, min(max_height, 170 + rows * row_px))
 
 
+
+
+def hour_range_label(hour_value):
+    """Convert numeric pickup hour into readable 1-hour range."""
+    try:
+        h = int(float(hour_value))
+    except Exception:
+        return "بدون وقت"
+
+    if h < 0 or h > 23:
+        return "بدون وقت"
+
+    def fmt(hour_24):
+        period = "AM" if hour_24 < 12 else "PM"
+        hour_12 = hour_24 % 12
+        if hour_12 == 0:
+            hour_12 = 12
+        return f"{hour_12}:00 {period}"
+
+    return f"{fmt(h)} - {fmt((h + 1) % 24)}"
+
+
+def hour_range_sort_value(label):
+    """Sort hour range labels by the starting hour."""
+    text = str(label)
+    if text == "بدون وقت":
+        return 999
+
+    m = re.search(r"(\d{1,2}):00\s*(AM|PM)", text, flags=re.IGNORECASE)
+    if not m:
+        return 999
+
+    hour = int(m.group(1))
+    period = m.group(2).upper()
+
+    if period == "AM":
+        return 0 if hour == 12 else hour
+    return 12 if hour == 12 else hour + 12
+
+
+
 def render_kpi(label, value, sub="", color="#22c55e"):
     st.markdown(
         f"""
@@ -1119,9 +1222,13 @@ def build_production_queue(active_items):
     q["أولوية"] = q["يحتاج متابعة؟"].map(lambda x: "عالية" if bool(x) else "عادية")
     q["وقت عرض"] = q["وقت الاستلام الأصلي"].replace("", "بدون وقت")
     q["تاريخ عرض"] = q["تاريخ التوصيل الأصلي"].replace("", "بدون تاريخ")
+    if "ساعة رقم" in q.columns:
+        q["نطاق ساعة الاستلام"] = q["ساعة رقم"].apply(hour_range_label)
+    else:
+        q["نطاق ساعة الاستلام"] = "بدون وقت"
 
     cols = [
-        "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
+        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
         "الحالة", "العميل", "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم",
         "أولوية", "سبب المتابعة", "رقم الجوال المستخرج", "واتساب", "الملاحظة",
         "تاريخ ووقت الاستلام", "ساعة رقم"
@@ -1181,9 +1288,13 @@ def build_action_center(active_items):
     a["واتساب"] = a["رقم الجوال المستخرج"].apply(whatsapp_url)
     a["وقت عرض"] = a["وقت الاستلام الأصلي"].replace("", "بدون وقت")
     a["تاريخ عرض"] = a["تاريخ التوصيل الأصلي"].replace("", "بدون تاريخ")
+    if "ساعة رقم" in a.columns:
+        a["نطاق ساعة الاستلام"] = a["ساعة رقم"].apply(hour_range_label)
+    else:
+        a["نطاق ساعة الاستلام"] = "بدون وقت"
 
     cols = [
-        "الأولوية", "حالة المتابعة", "نوع الإجراء", "وقت عرض", "تاريخ عرض",
+        "الأولوية", "حالة المتابعة", "نوع الإجراء", "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض",
         "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
         "المنتج", "الحشوة", "الكمية رقم", "رقم الجوال المستخرج", "واتساب",
         "ملاحظة داخلية", "الملاحظة", "تاريخ ووقت الاستلام", "ساعة رقم"
@@ -1203,7 +1314,7 @@ def build_branch_prep_detail(queue_df, branch):
         return pd.DataFrame()
     b = queue_df[queue_df["الفرع"].eq(branch)].copy() if "الفرع" in queue_df.columns else pd.DataFrame()
     cols = [
-        "وقت عرض", "رقم الطلب الظاهر", "الحالة", "العميل", "نوع الصنف",
+        "نطاق ساعة الاستلام", "وقت عرض", "رقم الطلب الظاهر", "الحالة", "العميل", "نوع الصنف",
         "المنتج", "الحشوة", "الكمية رقم", "أولوية", "سبب المتابعة",
         "رقم الجوال المستخرج", "الملاحظة"
     ]
@@ -1273,7 +1384,7 @@ def render_print_cards(print_df, limit=120):
     for _, row in shown.iterrows():
         order_no = html_escape(row.get("رقم الطلب الظاهر", ""))
         branch = html_escape(row.get("الفرع", ""))
-        time_v = html_escape(row.get("وقت عرض", row.get("وقت الاستلام الأصلي", "")))
+        time_v = html_escape(row.get("نطاق ساعة الاستلام", row.get("وقت عرض", row.get("وقت الاستلام الأصلي", ""))))
         status = html_escape(row.get("الحالة", ""))
         customer = html_escape(row.get("العميل", ""))
         product = html_escape(row.get("المنتج", ""))
@@ -1608,8 +1719,12 @@ with tab_production:
             q_branches = ["الكل"] + sorted(queue["الفرع"].dropna().unique().tolist()) if "الفرع" in queue.columns else ["الكل"]
             q_branch = st.selectbox("فرع التجهيز", q_branches, key="v8_queue_branch")
         with qf2:
-            q_hours = ["الكل"] + sorted(queue["وقت عرض"].dropna().unique().tolist()) if "وقت عرض" in queue.columns else ["الكل"]
-            q_hour = st.selectbox("وقت الاستلام", q_hours, key="v8_queue_hour")
+            if "نطاق ساعة الاستلام" in queue.columns:
+                unique_ranges = queue["نطاق ساعة الاستلام"].dropna().unique().tolist()
+                q_hours = ["الكل"] + sorted(unique_ranges, key=hour_range_sort_value)
+            else:
+                q_hours = ["الكل"]
+            q_hour = st.selectbox("نطاق ساعة الاستلام", q_hours, key="v8_queue_hour")
         with qf3:
             q_statuses = ["الكل"] + sorted(queue["الحالة"].dropna().unique().tolist()) if "الحالة" in queue.columns else ["الكل"]
             q_status = st.selectbox("الحالة", q_statuses, key="v8_queue_status")
@@ -1627,8 +1742,8 @@ with tab_production:
         queue_view = queue.copy()
         if q_branch != "الكل" and "الفرع" in queue_view.columns:
             queue_view = queue_view[queue_view["الفرع"].eq(q_branch)]
-        if q_hour != "الكل" and "وقت عرض" in queue_view.columns:
-            queue_view = queue_view[queue_view["وقت عرض"].eq(q_hour)]
+        if q_hour != "الكل" and "نطاق ساعة الاستلام" in queue_view.columns:
+            queue_view = queue_view[queue_view["نطاق ساعة الاستلام"].eq(q_hour)]
         if q_status != "الكل" and "الحالة" in queue_view.columns:
             queue_view = queue_view[queue_view["الحالة"].eq(q_status)]
         if q_priority != "الكل" and "أولوية" in queue_view.columns:
@@ -1659,8 +1774,11 @@ with tab_production:
         if not queue_view.empty:
             qc1, qc2 = st.columns([1, 1])
             with qc1:
-                by_hour_q = queue_view.groupby("وقت عرض", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
-                fig = px.bar(by_hour_q, x="وقت عرض", y="عدد الطلبات", text="عدد الطلبات", title="ضغط التجهيز حسب الوقت")
+                by_hour_col = "نطاق ساعة الاستلام" if "نطاق ساعة الاستلام" in queue_view.columns else "وقت عرض"
+                by_hour_q = queue_view.groupby(by_hour_col, dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
+                by_hour_q["_sort"] = by_hour_q[by_hour_col].apply(hour_range_sort_value)
+                by_hour_q = by_hour_q.sort_values("_sort").drop(columns=["_sort"])
+                fig = px.bar(by_hour_q, x=by_hour_col, y="عدد الطلبات", text="عدد الطلبات", title="ضغط التجهيز حسب نطاق الساعة")
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
             with qc2:
                 by_branch_q = queue_view.groupby("الفرع", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
@@ -1669,7 +1787,7 @@ with tab_production:
 
         st.markdown('<div class="mini-title">جدول التجهيز</div>', unsafe_allow_html=True)
         view_cols = [c for c in [
-            "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "الحالة", "العميل",
+            "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "الحالة", "العميل",
             "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم", "أولوية",
             "سبب المتابعة", "رقم الجوال المستخرج", "الملاحظة"
         ] if c in queue_view.columns]
@@ -1678,7 +1796,7 @@ with tab_production:
         st.download_button(
             "⬇️ تحميل Production Queue Excel",
             data=build_multi_sheet_excel({"Production Queue": queue_view}),
-            file_name="Production_Queue_V8_1.xlsx",
+            file_name="Production_Queue_V8_2.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_production_queue_v8",
         )
@@ -1754,7 +1872,7 @@ with tab_action_center:
 
         st.markdown('<div class="mini-title">جدول المتابعة التفاعلي</div>', unsafe_allow_html=True)
         editor_cols = [c for c in [
-            "الأولوية", "حالة المتابعة", "نوع الإجراء", "وقت عرض", "الفرع",
+            "الأولوية", "حالة المتابعة", "نوع الإجراء", "نطاق ساعة الاستلام", "وقت عرض", "الفرع",
             "رقم الطلب الظاهر", "الحالة", "العميل", "المنتج", "الحشوة",
             "رقم الجوال المستخرج", "واتساب", "ملاحظة داخلية", "الملاحظة"
         ] if c in action_view.columns]
@@ -1789,7 +1907,7 @@ with tab_action_center:
         st.download_button(
             "⬇️ تحميل Action Center Excel",
             data=build_multi_sheet_excel({"Action Center": edited_action}),
-            file_name="Action_Center_V8_1.xlsx",
+            file_name="Action_Center_V8_2.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_action_center_v8",
         )
@@ -1836,7 +1954,7 @@ with tab_print:
         st.download_button(
             "⬇️ تحميل Print View Excel",
             data=build_multi_sheet_excel({"Print View": print_view}),
-            file_name="Print_View_V8_1.xlsx",
+            file_name="Print_View_V8_2.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_print_view_v8",
         )
@@ -2234,9 +2352,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.1",
+        "⬇️ تحميل Excel شامل كل التقارير V8.2",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_1.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_2.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
