@@ -15,11 +15,11 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V8 - Production & Action Center
+# MAD Orders Dashboard V8.1 - Clean UI + Production Center
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8 Production & Action Center"
+APP_VERSION = "V8.1 Clean UI + Hidden Tables"
 
 
 # =========================
@@ -201,6 +201,31 @@ st.markdown(
         .js-plotly-plot .plotly .ytick text {
             font-size: 11px !important;
         }
+    }
+
+    
+    /* V8.1 Clean chart and hidden tables */
+    div[data-testid="stExpander"] {
+        border: 1px solid rgba(148, 163, 184, .28) !important;
+        border-radius: 16px !important;
+        background: rgba(15, 23, 42, .38) !important;
+        margin: 12px 0 20px 0 !important;
+    }
+
+    div[data-testid="stExpander"] summary {
+        font-weight: 800 !important;
+        color: #f8fafc !important;
+        font-size: 15px !important;
+    }
+
+    .js-plotly-plot .plotly .ytick text,
+    .js-plotly-plot .plotly .xtick text {
+        dominant-baseline: middle !important;
+    }
+
+    .js-plotly-plot .plotly .heatmaplayer text {
+        font-weight: 700 !important;
+        fill: rgba(15, 23, 42, .88) !important;
     }
 
     </style>
@@ -916,6 +941,17 @@ def make_readable_fig(fig, height=480, showlegend=True, legend_orientation="h"):
     return fig
 
 
+
+
+def heatmap_height(row_count, min_height=520, max_height=900, row_px=44):
+    """Dynamic heatmap height to avoid label overlap."""
+    try:
+        rows = int(row_count)
+    except Exception:
+        rows = 8
+    return max(min_height, min(max_height, 170 + rows * row_px))
+
+
 def render_kpi(label, value, sub="", color="#22c55e"):
     st.markdown(
         f"""
@@ -948,11 +984,16 @@ def chart_config():
     return {"responsive": True, "displayModeBar": False, "scrollZoom": False}
 
 
-def display_df(df, height=420):
+def display_df(df, height=420, label="عرض الجدول"):
+    """Keep dashboards clean: tables are hidden by default behind an expander."""
     if df is None or df.empty:
         st.info("لا توجد بيانات لهذا التقرير ضمن الفلاتر الحالية.")
         return
-    st.dataframe(df, use_container_width=True, height=height)
+
+    rows_count = len(df)
+    cols_count = len(df.columns)
+    with st.expander(f"📋 {label} — {format_int(rows_count)} صف / {format_int(cols_count)} عمود", expanded=False):
+        st.dataframe(df, use_container_width=True, height=height)
 
 
 def write_excel_sheet(writer, df, sheet_name):
@@ -1637,7 +1678,7 @@ with tab_production:
         st.download_button(
             "⬇️ تحميل Production Queue Excel",
             data=build_multi_sheet_excel({"Production Queue": queue_view}),
-            file_name="Production_Queue_V8.xlsx",
+            file_name="Production_Queue_V8_1.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_production_queue_v8",
         )
@@ -1719,34 +1760,36 @@ with tab_action_center:
         ] if c in action_view.columns]
         action_editor = action_view[editor_cols].copy() if editor_cols else action_view.copy()
 
-        try:
-            edited_action = st.data_editor(
-                action_editor,
-                use_container_width=True,
-                height=620,
-                column_config={
-                    "واتساب": st.column_config.LinkColumn("واتساب", display_text="فتح واتساب"),
-                    "حالة المتابعة": st.column_config.SelectboxColumn(
-                        "حالة المتابعة",
-                        options=[
-                            "لم يبدأ", "تم التواصل", "بانتظار الصورة", "تم استلام الصورة",
-                            "تم إرسالها للإنتاج", "تم التجهيز", "جاهز للتسليم",
-                            "مشكلة / يحتاج تدخل"
-                        ],
-                    ),
-                    "ملاحظة داخلية": st.column_config.TextColumn("ملاحظة داخلية"),
-                },
-                disabled=[c for c in action_editor.columns if c not in ["حالة المتابعة", "ملاحظة داخلية"]],
-                key="action_center_editor_v8",
-            )
-        except Exception:
-            edited_action = action_editor
-            display_df(action_editor, 620)
+        edited_action = action_editor
+        with st.expander(f"✅ عرض جدول المتابعة التفاعلي — {format_int(len(action_editor))} صف", expanded=False):
+            try:
+                edited_action = st.data_editor(
+                    action_editor,
+                    use_container_width=True,
+                    height=620,
+                    column_config={
+                        "واتساب": st.column_config.LinkColumn("واتساب", display_text="فتح واتساب"),
+                        "حالة المتابعة": st.column_config.SelectboxColumn(
+                            "حالة المتابعة",
+                            options=[
+                                "لم يبدأ", "تم التواصل", "بانتظار الصورة", "تم استلام الصورة",
+                                "تم إرسالها للإنتاج", "تم التجهيز", "جاهز للتسليم",
+                                "مشكلة / يحتاج تدخل"
+                            ],
+                        ),
+                        "ملاحظة داخلية": st.column_config.TextColumn("ملاحظة داخلية"),
+                    },
+                    disabled=[c for c in action_editor.columns if c not in ["حالة المتابعة", "ملاحظة داخلية"]],
+                    key="action_center_editor_v8",
+                )
+            except Exception:
+                edited_action = action_editor
+                st.dataframe(action_editor, use_container_width=True, height=620)
 
         st.download_button(
             "⬇️ تحميل Action Center Excel",
             data=build_multi_sheet_excel({"Action Center": edited_action}),
-            file_name="Action_Center_V8.xlsx",
+            file_name="Action_Center_V8_1.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_action_center_v8",
         )
@@ -1793,7 +1836,7 @@ with tab_print:
         st.download_button(
             "⬇️ تحميل Print View Excel",
             data=build_multi_sheet_excel({"Print View": print_view}),
-            file_name="Print_View_V8.xlsx",
+            file_name="Print_View_V8_1.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_print_view_v8",
         )
@@ -1970,10 +2013,15 @@ with tab_varieties:
 
     if not branch_variety_heatmap.empty:
         st.markdown('<div class="mini-title">Heatmap الفرع × الحشوة</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="readability-note">لمنع تداخل النصوص، يعرض الرسم أعلى 6 حشوات فقط بأسماء مختصرة. الاسم الكامل موجود في الجدول وExcel.</div>',
+            unsafe_allow_html=True,
+        )
+
         heat = branch_variety_heatmap.copy()
-        top_cols = heat.sum(axis=0).sort_values(ascending=False).head(8).index
+        top_cols = heat.sum(axis=0).sort_values(ascending=False).head(6).index
         heat = heat[top_cols]
-        heat.index = [wrap_label(x, 18) for x in heat.index]
+        heat.index = [short_label(x, 24) for x in heat.index]
         heat.columns = [short_label(x, 18) for x in heat.columns]
 
         fig = px.imshow(
@@ -1983,23 +2031,48 @@ with tab_varieties:
             title="كمية أعلى الحشوات حسب الفروع",
             color_continuous_scale="YlGnBu",
         )
-        fig.update_xaxes(side="top", tickangle=0)
-        st.plotly_chart(make_readable_fig(fig, 560, showlegend=False), use_container_width=True, config=chart_config())
+        fig.update_xaxes(side="top", tickangle=-20, tickfont=dict(size=12))
+        fig.update_yaxes(tickfont=dict(size=12))
+        fig.update_layout(margin=dict(l=170, r=35, t=105, b=80))
+        st.plotly_chart(
+            make_readable_fig(fig, heatmap_height(len(heat), min_height=520, max_height=760, row_px=54), showlegend=False),
+            use_container_width=True,
+            config=chart_config(),
+        )
 
     st.markdown('<div class="mini-title">الحشوات حسب المنتج</div>', unsafe_allow_html=True)
     display_df(variety_by_product, 520)
 
     if not product_variety_heatmap.empty:
-        top_products_for_heatmap = product_variety_heatmap.sum(axis=1).sort_values(ascending=False).head(15).index
-        pv_heat = product_variety_heatmap.loc[top_products_for_heatmap]
-        top_variety_cols = pv_heat.sum(axis=0).sort_values(ascending=False).head(8).index
-        pv_heat = pv_heat[top_variety_cols]
-        pv_heat.index = [wrap_label(x, 26) for x in pv_heat.index]
-        pv_heat.columns = [short_label(x, 18) for x in pv_heat.columns]
         st.markdown('<div class="mini-title">Heatmap المنتج × الحشوة — أعلى المنتجات</div>', unsafe_allow_html=True)
-        fig = px.imshow(pv_heat, text_auto=True, aspect="auto", title="توزيع الحشوات حسب المنتجات", color_continuous_scale="Teal")
-        fig.update_xaxes(side="top", tickangle=0)
-        st.plotly_chart(make_readable_fig(fig, 700, showlegend=False), use_container_width=True, config=chart_config())
+        st.markdown(
+            '<div class="readability-note">هذا الرسم كان متداخل بسبب أسماء المنتجات الطويلة. الآن نعرض أعلى 10 منتجات × أعلى 6 حشوات بأسماء مختصرة، والتفاصيل الكاملة موجودة في الجدول وExcel.</div>',
+            unsafe_allow_html=True,
+        )
+
+        top_products_for_heatmap = product_variety_heatmap.sum(axis=1).sort_values(ascending=False).head(10).index
+        pv_heat = product_variety_heatmap.loc[top_products_for_heatmap]
+        top_variety_cols = pv_heat.sum(axis=0).sort_values(ascending=False).head(6).index
+        pv_heat = pv_heat[top_variety_cols]
+
+        pv_heat.index = [short_label(x, 32) for x in pv_heat.index]
+        pv_heat.columns = [short_label(x, 18) for x in pv_heat.columns]
+
+        fig = px.imshow(
+            pv_heat,
+            text_auto=True,
+            aspect="auto",
+            title="توزيع الحشوات حسب المنتجات",
+            color_continuous_scale="Teal",
+        )
+        fig.update_xaxes(side="top", tickangle=-20, tickfont=dict(size=12))
+        fig.update_yaxes(tickfont=dict(size=12))
+        fig.update_layout(margin=dict(l=260, r=35, t=110, b=95))
+        st.plotly_chart(
+            make_readable_fig(fig, heatmap_height(len(pv_heat), min_height=620, max_height=880, row_px=58), showlegend=False),
+            use_container_width=True,
+            config=chart_config(),
+        )
 
     st.markdown('<div class="mini-title">الحشوات حسب الساعة</div>', unsafe_allow_html=True)
     if not variety_by_hour.empty:
@@ -2161,9 +2234,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8",
+        "⬇️ تحميل Excel شامل كل التقارير V8.1",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_1.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
