@@ -2147,6 +2147,60 @@ if df is not None and len(df) > 0:
     duplicate_rows_estimate = total_rows - total_unique_orders
     total_fillings_qty = int(filling_rows["كمية رقمية"].sum()) if len(filling_rows) else 0
 
+    # =========================
+    # Advanced Reports V6.1
+    # =========================
+
+    cols_for_reports = {
+        "order_id_col": order_id_col,
+        "order_no_col": order_no_col,
+        "status_col": status_col,
+        "pickup_time_col": pickup_time_col,
+        "delivery_date_col": delivery_date_col,
+        "item_name_col": item_name_col,
+        "variety_col": variety_col,
+        "note_col": note_col,
+    }
+
+    reports = build_advanced_reports(
+        clean=clean,
+        active=active,
+        active_items=active_items,
+        unique_orders=unique_orders,
+        cols=cols_for_reports,
+    )
+
+    order_level = reports.get("order_level", pd.DataFrame())
+    branch_sales = reports.get("branch_sales", pd.DataFrame())
+    hour_sales = reports.get("hour_sales", pd.DataFrame())
+    status_report = reports.get("status_report", pd.DataFrame())
+    product_perf = reports.get("product_perf", pd.DataFrame())
+    products_by_branch = reports.get("products_by_branch", pd.DataFrame())
+    addons_summary = reports.get("addons_summary", pd.DataFrame())
+    addon_kpis = reports.get("addon_kpis", pd.DataFrame())
+    need_action_report = reports.get("need_action_report", pd.DataFrame())
+    quality_summary = reports.get("quality_summary", pd.DataFrame())
+    data_quality_report = reports.get("data_quality_report", pd.DataFrame())
+    multi_item_orders = reports.get("multi_item_orders", pd.DataFrame())
+    campaign_summary = reports.get("campaign_summary", pd.DataFrame())
+    campaign_products = reports.get("campaign_products", pd.DataFrame())
+
+    if len(order_level) and "قيمة الطلب رقمية" in order_level.columns:
+        total_sales = float(order_level["قيمة الطلب رقمية"].fillna(0).sum())
+        avg_order_value = float(order_level["قيمة الطلب رقمية"].fillna(0).mean())
+    else:
+        total_sales = 0.0
+        avg_order_value = 0.0
+
+    if len(need_action_report):
+        if order_id_col and order_id_col in need_action_report.columns:
+            need_action_count = int(need_action_report[order_id_col].astype(str).nunique())
+        else:
+            need_action_count = int(len(need_action_report))
+    else:
+        need_action_count = 0
+
+
     if len(unique_orders) > 0:
         top_hour = (
             unique_orders.groupby("الساعة")[order_id_col]
@@ -2203,6 +2257,12 @@ if df is not None and len(df) > 0:
             int(top_filling.iloc[0]) if len(top_filling) else 0,
         ]
     })
+
+
+    # Safety defaults in case any advanced report returns empty data.
+    total_sales = float(total_sales) if "total_sales" in locals() else 0.0
+    avg_order_value = float(avg_order_value) if "avg_order_value" in locals() else 0.0
+    need_action_count = int(need_action_count) if "need_action_count" in locals() else 0
 
     # =========================
     # Premium Display
