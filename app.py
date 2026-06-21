@@ -18,7 +18,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V7.2 Operations + Fillings Reports"
+APP_VERSION = "V7.3 Readable Charts + Fillings Reports"
 
 
 # =========================
@@ -166,6 +166,42 @@ st.markdown(
         .js-plotly-plot, .plotly, .plot-container, .svg-container { width: 100% !important; max-width: 100% !important; }
         section[data-testid="stSidebar"] { min-width: 285px !important; }
     }
+    
+    /* V7.3 Readability fixes */
+    .js-plotly-plot .plotly .legend text,
+    .js-plotly-plot .plotly .xtick text,
+    .js-plotly-plot .plotly .ytick text,
+    .js-plotly-plot .plotly .gtitle,
+    .js-plotly-plot .plotly .xtitle,
+    .js-plotly-plot .plotly .ytitle {
+        fill: #f8fafc !important;
+        opacity: 1 !important;
+        font-weight: 600 !important;
+    }
+
+    .js-plotly-plot .plotly .legend {
+        opacity: 1 !important;
+    }
+
+    .readability-note {
+        background: rgba(30, 41, 59, .65);
+        border: 1px solid rgba(148, 163, 184, .24);
+        padding: 12px 14px;
+        border-radius: 16px;
+        color: #e5e7eb;
+        font-size: 14px;
+        line-height: 1.8;
+        margin: 8px 0 16px 0;
+    }
+
+    @media (max-width: 768px) {
+        .js-plotly-plot .plotly .legend text,
+        .js-plotly-plot .plotly .xtick text,
+        .js-plotly-plot .plotly .ytick text {
+            font-size: 11px !important;
+        }
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -793,6 +829,92 @@ def format_money(value):
         return "0 SAR"
 
 
+def short_label(value, max_len=28):
+    """Short readable label for charts while keeping full value in tables."""
+    text = "" if pd.isna(value) else str(value)
+    text = re.sub(r"\\s+", " ", text).strip()
+    if len(text) <= max_len:
+        return text
+    return text[:max_len - 1].rstrip() + "…"
+
+
+def wrap_label(value, width=18):
+    """Wrap long Arabic/English labels for Plotly axes."""
+    text = "" if pd.isna(value) else str(value)
+    text = re.sub(r"\\s+", " ", text).strip()
+    if len(text) <= width:
+        return text
+    words = text.split(" ")
+    lines = []
+    current = ""
+    for word in words:
+        if len(current) + len(word) + 1 <= width:
+            current = (current + " " + word).strip()
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return "<br>".join(lines[:3]) + ("…" if len(lines) > 3 else "")
+
+
+def make_readable_fig(fig, height=480, showlegend=True, legend_orientation="h"):
+    """Global readability styling for dark dashboard charts."""
+    fig.update_layout(
+        height=height,
+        font=dict(size=15, color="#f8fafc", family="Arial"),
+        title=dict(font=dict(size=20, color="#f8fafc"), x=0.02, xanchor="left"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(15,23,42,0.18)",
+        margin=dict(l=70, r=35, t=90, b=105),
+        showlegend=showlegend,
+    )
+    fig.update_xaxes(
+        tickfont=dict(size=13, color="#e5e7eb"),
+        title_font=dict(size=15, color="#e5e7eb"),
+        gridcolor="rgba(148,163,184,0.22)",
+        automargin=True,
+    )
+    fig.update_yaxes(
+        tickfont=dict(size=13, color="#e5e7eb"),
+        title_font=dict(size=15, color="#e5e7eb"),
+        gridcolor="rgba(148,163,184,0.22)",
+        automargin=True,
+    )
+    if showlegend:
+        if legend_orientation == "h":
+            fig.update_layout(
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=-0.33,
+                    xanchor="center",
+                    x=0.5,
+                    font=dict(size=13, color="#f8fafc"),
+                    bgcolor="rgba(15,23,42,0.65)",
+                    bordercolor="rgba(148,163,184,0.25)",
+                    borderwidth=1,
+                    itemwidth=30,
+                )
+            )
+        else:
+            fig.update_layout(
+                legend=dict(
+                    orientation="v",
+                    yanchor="top",
+                    y=1,
+                    xanchor="left",
+                    x=1.02,
+                    font=dict(size=13, color="#f8fafc"),
+                    bgcolor="rgba(15,23,42,0.65)",
+                    bordercolor="rgba(148,163,184,0.25)",
+                    borderwidth=1,
+                )
+            )
+    return fig
+
+
 def render_kpi(label, value, sub="", color="#22c55e"):
     st.markdown(
         f"""
@@ -1288,24 +1410,33 @@ with tab_varieties:
     with cv1:
         if not variety.empty:
             top_v = variety.head(12).copy()
+            top_v["الحشوة المختصرة"] = top_v["الحشوة"].apply(lambda x: short_label(x, 34))
             fig = px.bar(
                 top_v.sort_values("الكمية"),
                 x="الكمية",
-                y="الحشوة",
+                y="الحشوة المختصرة",
                 orientation="h",
                 text="الكمية",
                 title="أكثر الحشوات حسب الكمية",
                 color="الكمية",
                 color_continuous_scale="Magma",
+                hover_data={"الحشوة": True, "الكمية": ":,.0f", "المبيعات": ":,.0f", "الحشوة المختصرة": False},
             )
-            st.plotly_chart(fig_layout(fig, 470), use_container_width=True, config=chart_config())
+            fig.update_layout(yaxis_title="الحشوة", xaxis_title="الكمية")
+            fig.update_traces(textposition="outside", textfont_size=13, cliponaxis=False)
+            st.plotly_chart(make_readable_fig(fig, 500, showlegend=False), use_container_width=True, config=chart_config())
         else:
             st.info("لا توجد بيانات حشوات ضمن الفلاتر الحالية.")
 
     with cv2:
         if not variety.empty:
-            fig = px.pie(variety, names="الحشوة", values="الكمية", hole=.55, title="Mix الحشوات")
-            st.plotly_chart(fig_layout(fig, 470), use_container_width=True, config=chart_config())
+            pie_v = variety.copy()
+            top_pie_names = pie_v.sort_values("الكمية", ascending=False).head(7)["الحشوة"].tolist()
+            pie_v["الحشوة للعرض"] = pie_v["الحشوة"].apply(lambda x: short_label(x, 22) if x in top_pie_names else "Other")
+            pie_v = pie_v.groupby("الحشوة للعرض", dropna=False)["الكمية"].sum().reset_index()
+            fig = px.pie(pie_v, names="الحشوة للعرض", values="الكمية", hole=.55, title="Mix الحشوات")
+            fig.update_traces(textposition="inside", textinfo="percent+label", textfont_size=14)
+            st.plotly_chart(make_readable_fig(fig, 500, showlegend=True, legend_orientation="h"), use_container_width=True, config=chart_config())
         else:
             st.info("لا توجد بيانات حشوات.")
 
@@ -1313,46 +1444,103 @@ with tab_varieties:
     display_df(variety, 340)
 
     st.markdown('<div class="mini-title">الحشوات حسب الفرع</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="readability-note">تم تحسين هذا الرسم للقراءة: نعرض أعلى 6 حشوات فقط في الرسم، وباقي التفاصيل كاملة موجودة في الجدول وملف Excel.</div>',
+        unsafe_allow_html=True,
+    )
+
     if not variety_by_branch.empty:
-        fig = px.bar(
-            variety_by_branch,
-            x="الفرع",
-            y="الكمية",
-            color="الحشوة",
-            title="توزيع الحشوات على الفروع",
-            barmode="group",
+        top_fillings_for_branch_chart = (
+            variety_by_branch.groupby("الحشوة", dropna=False)["الكمية"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(6)
+            .index
+            .tolist()
         )
-        st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
+        vbb_chart = variety_by_branch[variety_by_branch["الحشوة"].isin(top_fillings_for_branch_chart)].copy()
+        vbb_chart["الحشوة المختصرة"] = vbb_chart["الحشوة"].apply(lambda x: short_label(x, 22))
+        vbb_chart["الفرع المختصر"] = vbb_chart["الفرع"].apply(lambda x: wrap_label(x, 18))
+
+        fig = px.bar(
+            vbb_chart,
+            x="الفرع المختصر",
+            y="الكمية",
+            color="الحشوة المختصرة",
+            title="توزيع أعلى الحشوات على الفروع",
+            barmode="stack",
+            text="الكمية",
+            hover_data={
+                "الفرع": True,
+                "الحشوة": True,
+                "الكمية": ":,.0f",
+                "المبيعات": ":,.0f",
+                "الفرع المختصر": False,
+                "الحشوة المختصرة": False,
+            },
+        )
+        fig.update_traces(textposition="inside", textfont_size=13, cliponaxis=False)
+        fig.update_layout(xaxis_title="الفرع", yaxis_title="الكمية")
+        st.plotly_chart(make_readable_fig(fig, 560, showlegend=True, legend_orientation="h"), use_container_width=True, config=chart_config())
     display_df(variety_by_branch, 420)
 
     if not branch_variety_heatmap.empty:
         st.markdown('<div class="mini-title">Heatmap الفرع × الحشوة</div>', unsafe_allow_html=True)
-        fig = px.imshow(branch_variety_heatmap, text_auto=True, aspect="auto", title="كمية الحشوات حسب الفروع", color_continuous_scale="YlGnBu")
-        fig.update_xaxes(side="top")
-        st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
+        heat = branch_variety_heatmap.copy()
+        top_cols = heat.sum(axis=0).sort_values(ascending=False).head(8).index
+        heat = heat[top_cols]
+        heat.index = [wrap_label(x, 18) for x in heat.index]
+        heat.columns = [short_label(x, 18) for x in heat.columns]
+
+        fig = px.imshow(
+            heat,
+            text_auto=True,
+            aspect="auto",
+            title="كمية أعلى الحشوات حسب الفروع",
+            color_continuous_scale="YlGnBu",
+        )
+        fig.update_xaxes(side="top", tickangle=0)
+        st.plotly_chart(make_readable_fig(fig, 560, showlegend=False), use_container_width=True, config=chart_config())
 
     st.markdown('<div class="mini-title">الحشوات حسب المنتج</div>', unsafe_allow_html=True)
     display_df(variety_by_product, 520)
 
     if not product_variety_heatmap.empty:
-        top_products_for_heatmap = product_variety_heatmap.sum(axis=1).sort_values(ascending=False).head(20).index
+        top_products_for_heatmap = product_variety_heatmap.sum(axis=1).sort_values(ascending=False).head(15).index
         pv_heat = product_variety_heatmap.loc[top_products_for_heatmap]
-        st.markdown('<div class="mini-title">Heatmap المنتج × الحشوة — أعلى 20 منتج</div>', unsafe_allow_html=True)
+        top_variety_cols = pv_heat.sum(axis=0).sort_values(ascending=False).head(8).index
+        pv_heat = pv_heat[top_variety_cols]
+        pv_heat.index = [wrap_label(x, 26) for x in pv_heat.index]
+        pv_heat.columns = [short_label(x, 18) for x in pv_heat.columns]
+        st.markdown('<div class="mini-title">Heatmap المنتج × الحشوة — أعلى المنتجات</div>', unsafe_allow_html=True)
         fig = px.imshow(pv_heat, text_auto=True, aspect="auto", title="توزيع الحشوات حسب المنتجات", color_continuous_scale="Teal")
-        fig.update_xaxes(side="top")
-        st.plotly_chart(fig_layout(fig, 620), use_container_width=True, config=chart_config())
+        fig.update_xaxes(side="top", tickangle=0)
+        st.plotly_chart(make_readable_fig(fig, 700, showlegend=False), use_container_width=True, config=chart_config())
 
     st.markdown('<div class="mini-title">الحشوات حسب الساعة</div>', unsafe_allow_html=True)
     if not variety_by_hour.empty:
+        top_hour_fillings = (
+            variety_by_hour.groupby("الحشوة", dropna=False)["الكمية"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(6)
+            .index
+            .tolist()
+        )
+        vbh_chart = variety_by_hour[variety_by_hour["الحشوة"].isin(top_hour_fillings)].copy()
+        vbh_chart["الحشوة المختصرة"] = vbh_chart["الحشوة"].apply(lambda x: short_label(x, 22))
         fig = px.line(
-            variety_by_hour,
+            vbh_chart,
             x="الساعة",
             y="الكمية",
-            color="الحشوة",
+            color="الحشوة المختصرة",
             markers=True,
-            title="طلب الحشوات حسب وقت الاستلام",
+            title="طلب أعلى الحشوات حسب وقت الاستلام",
+            hover_data={"الحشوة": True, "الكمية": ":,.0f", "الحشوة المختصرة": False},
         )
-        st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=chart_config())
+        fig.update_traces(line_width=3, marker_size=8)
+        fig.update_layout(xaxis_title="الساعة", yaxis_title="الكمية")
+        st.plotly_chart(make_readable_fig(fig, 500, showlegend=True, legend_orientation="h"), use_container_width=True, config=chart_config())
     display_df(variety_by_hour, 420)
 
     st.markdown('<div class="mini-title">الحشوات حسب الحملة</div>', unsafe_allow_html=True)
@@ -1489,7 +1677,7 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V7.2",
+        "⬇️ تحميل Excel شامل كل التقارير V7.3",
         data=excel_file,
         file_name="MAD_Orders_Control_Center_V7_2.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
