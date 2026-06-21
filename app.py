@@ -101,7 +101,7 @@ def read_uploaded_file(uploaded_file):
 def extract_branch(chef_name):
     """
     استخراج اسم الفرع من خانة اسم الشيف.
-    لو مفيش اسم فرع واضح يرجع: العقيق
+    لو مفيش اسم فرع واضح يرجع: بدون فرع محدد
     """
     text = str(chef_name).strip()
     lower_text = text.lower()
@@ -119,7 +119,7 @@ def extract_branch(chef_name):
             if keyword.lower() in lower_text:
                 return branch
 
-    return "العقيق"
+    return "بدون فرع محدد"
 
 
 def parse_datetime(delivery_date, pickup_time):
@@ -350,7 +350,7 @@ def create_excel_file(
         str(x) for x in active_rows["Calc_Branch"].dropna().unique().tolist()
         if str(x).strip() != ""
     ]
-    branches = sorted(branches) or ["العقيق"]
+    branches = sorted(branches) or ["بدون فرع محدد"]
 
     if "رقم الساعة" in active_rows.columns:
         hour_df = (
@@ -1325,6 +1325,8 @@ def display_pretty_dataframe(df, height=420):
     except Exception:
         st.dataframe(df, use_container_width=True, height=height)
 
+
+DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
 
 st.sidebar.markdown("## ⚙️ إعدادات التحليل")
 st.sidebar.caption("اربط Google Sheet أو ارفع ملف، ثم اختر تاريخ الاستلام للتحليل.")
