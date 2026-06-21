@@ -1108,7 +1108,18 @@ with tab_daily:
 
     st.markdown('<div class="mini-title">أقرب جدول تشغيل ضمن الفلاتر</div>', unsafe_allow_html=True)
     ops_cols = ["رقم الطلب", "العميل", "الفرع", "الحالة", "تاريخ التحليل", "وقت الاستلام", "الساعة", "قيمة الطلب", "عدد الأصناف", "عدد الإضافات", "يحتاج متابعة"]
-    display_df(active_orders[[c for c in ops_cols if c in active_orders.columns]].sort_values(["تاريخ ووقت الاستلام", "الفرع"], na_position="last"), 420)
+    ops_view_cols = [c for c in ops_cols if c in active_orders.columns]
+    ops_sort_cols = [c for c in ["تاريخ ووقت الاستلام", "الفرع"] if c in active_orders.columns]
+
+    if not active_orders.empty:
+        ops_view = active_orders.copy()
+        if ops_sort_cols:
+            ops_view = ops_view.sort_values(ops_sort_cols, na_position="last")
+        ops_view = ops_view[ops_view_cols] if ops_view_cols else ops_view
+    else:
+        ops_view = pd.DataFrame(columns=ops_view_cols)
+
+    display_df(ops_view, 420)
 
 
 with tab_prep:
