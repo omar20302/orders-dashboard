@@ -24,7 +24,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.4 Full Bilingual + Auto Refresh"
+APP_VERSION = "V8.4.2 Sidebar Readability Fix"
 
 
 # =========================
@@ -170,7 +170,8 @@ st.markdown(
         .stTabs [data-baseweb="tab"] { font-size: 12px !important; padding: 8px 11px !important; }
         .stButton button, .stDownloadButton button { width: 100% !important; min-height: 44px !important; }
         .js-plotly-plot, .plotly, .plot-container, .svg-container { width: 100% !important; max-width: 100% !important; }
-        section[data-testid="stSidebar"] { min-width: 285px !important; }
+        section[data-testid="stSidebar"][aria-expanded="true"] { min-width: 285px !important; max-width: 92vw !important; }
+        section[data-testid="stSidebar"][aria-expanded="false"] { min-width: 0 !important; width: 0 !important; max-width: 0 !important; overflow: hidden !important; }
     }
     
     /* V7.3 Readability fixes */
@@ -295,6 +296,61 @@ st.markdown(
         opacity: 1 !important;
     }
 
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+
+# =========================
+# V8.4.1 Sidebar Collapse Fix
+# يمنع ظهور نص القائمة الجانبية بشكل عمودي عند إخفائها
+# =========================
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        min-width: 0 !important;
+        width: 0 !important;
+        max-width: 0 !important;
+        overflow: hidden !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: 0 !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="false"] > div {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+        overflow: hidden !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] {
+        overflow: visible !important;
+    }
+
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"][aria-expanded="true"] {
+            min-width: 285px !important;
+            max-width: 92vw !important;
+        }
+
+        section[data-testid="stSidebar"][aria-expanded="false"] {
+            min-width: 0 !important;
+            width: 0 !important;
+            max-width: 0 !important;
+            overflow: hidden !important;
+        }
+
+        section[data-testid="stSidebar"][aria-expanded="false"] * {
+            display: none !important;
+            visibility: hidden !important;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
