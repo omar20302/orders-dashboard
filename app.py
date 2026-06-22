@@ -15,11 +15,11 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V8.3 - Advanced Reports Pack
+# MAD Orders Dashboard V8.3.3 - Branch Auto Fix
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.3 Advanced Reports Pack"
+APP_VERSION = "V8.3.3 Branch Auto Fix - Aqiq"
 
 
 # =========================
@@ -361,7 +361,7 @@ def extract_branch(chef_name):
     for branch, keywords in branch_keywords.items():
         if any(k.lower() in low for k in keywords):
             return branch
-    return "العقيق"
+    return "بدون فرع محدد"
 
 
 def normalize_variety(value):
@@ -391,16 +391,142 @@ def normalize_product_name(value):
     return re.sub(r"\s+", " ", text)
 
 
+def text_has_date(value):
+    text = normalize_arabic_digits(value)
+    if not text:
+        return False
+    patterns = [
+        r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b",
+        r"\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b",
+    ]
+    return any(re.search(p, text) for p in patterns)
+
+
+def text_has_time(value):
+    text = normalize_arabic_digits(value).lower()
+    if not text:
+        return False
+    return bool(re.search(r"\b\d{1,2}:\d{2}\s*(am|pm|ص|م)?\b", text) or re.search(r"\b\d{1,2}\s*(am|pm|ص|م)\b", text))
+
+
+def parse_any_datetime_with_date(value):
+    """Parse only values that actually contain a date; avoids converting '5:00 PM' to today's date."""
+    text = normalize_arabic_digits(value)
+    if not text or not text_has_date(text):
+        return pd.NaT
+    for dayfirst in [True, False]:
+        parsed = pd.to_datetime(text, errors="coerce", dayfirst=dayfirst)
+        if not pd.isna(parsed):
+            return parsed
+    return pd.NaT
+
+
+def parse_time_only_value(value):
+    """Return time string from time-only values, without creating a fake date."""
+    text = normalize_arabic_digits(value).strip()
+    if not text or text_has_date(text):
+        return ""
+    # Normalize Arabic AM/PM if present
+    text = text.replace("ص", "AM").replace("م", "PM")
+    for fmt in ["%I:%M %p", "%I %p", "%H:%M"]:
+        try:
+            dt = pd.to_datetime(text, format=fmt, errors="coerce")
+            if not pd.isna(dt):
+                hour = int(dt.hour)
+                minute = int(dt.minute)
+                period = "AM" if hour < 12 else "PM"
+                hour12 = hour % 12 or 12
+                return f"{hour12}:{minute:02d} {period}"
+        except Exception:
+            pass
+    # fallback for values already like 5:00 PM
+    if text_has_time(text):
+        return text
+    return ""
+
+
+def format_date_iso(dt):
+    if pd.isna(dt):
+        return ""
+    return pd.Timestamp(dt).strftime("%Y-%m-%d")
+
+
+def format_time_12h(dt):
+    if pd.isna(dt):
+        return ""
+    ts = pd.Timestamp(dt)
+    hour = int(ts.hour)
+    minute = int(ts.minute)
+    period = "AM" if hour < 12 else "PM"
+    hour12 = hour % 12 or 12
+    return f"{hour12}:{minute:02d} {period}"
+
+
+def clean_delivery_pickup_values(date_value, time_value):
+    """
+    Cleans cases where date+time is placed in the wrong column.
+    Example:
+    Delivery Date = ''
+    Pickup Time = '2026-06-22 5:00 PM'
+    returns:
+    ('2026-06-22', '5:00 PM', True)
+    """
+    raw_date = normalize_arabic_digits(date_value).strip()
+    raw_time = normalize_arabic_digits(time_value).strip()
+
+    date_dt = parse_any_datetime_with_date(raw_date)
+    time_dt = parse_any_datetime_with_date(raw_time)
+
+    cleaned = False
+
+    # Case 1: Pickup Time contains full datetime.
+    if not pd.isna(time_dt):
+        cleaned_date = format_date_iso(time_dt)
+        cleaned_time = format_time_12h(time_dt)
+
+        # If delivery date is valid and different, keep the valid delivery date but still clean the time.
+        if not pd.isna(date_dt):
+            cleaned_date = format_date_iso(date_dt)
+
+        if raw_date != cleaned_date or raw_time != cleaned_time:
+            cleaned = True
+        return cleaned_date, cleaned_time, cleaned
+
+    # Case 2: Delivery Date contains full datetime.
+    if not pd.isna(date_dt):
+        cleaned_date = format_date_iso(date_dt)
+
+        if text_has_time(raw_date):
+            cleaned_time = format_time_12h(date_dt)
+            cleaned = True
+        else:
+            cleaned_time = parse_time_only_value(raw_time) or raw_time
+
+        if raw_date != cleaned_date or (raw_time and raw_time != cleaned_time):
+            cleaned = True
+        return cleaned_date, cleaned_time, cleaned
+
+    # Case 3: normal date/time or missing date.
+    cleaned_date = raw_date
+    cleaned_time = parse_time_only_value(raw_time) or raw_time
+    if raw_time != cleaned_time:
+        cleaned = True
+    return cleaned_date, cleaned_time, cleaned
+
+
 def parse_datetime_parts(date_value, time_value):
     date_value = normalize_arabic_digits(date_value)
     time_value = normalize_arabic_digits(time_value)
+
+    # Do not parse time-only values by themselves because Pandas may attach today's date.
     candidates = []
     if date_value and time_value:
         candidates.append(f"{date_value} {time_value}")
-    if time_value:
+    if time_value and text_has_date(time_value):
         candidates.append(time_value)
     if date_value:
         candidates.append(date_value)
+
     for candidate in candidates:
         candidate = candidate.strip()
         if not candidate:
@@ -610,7 +736,9 @@ def prepare_data(raw_df):
     df["رقم الطلب الظاهر"] = col_or_blank(df, cols["order_no"]).replace("", pd.NA).fillna(df["رقم الطلب الموحد"]).astype(str)
     df["العميل"] = col_or_blank(df, cols["customer"])
     df["الشيف / الفرع الأصلي"] = col_or_blank(df, cols["chef"])
-    df["الفرع"] = df["الشيف / الفرع الأصلي"].apply(extract_branch)
+    df["الفرع قبل التصحيح"] = df["الشيف / الفرع الأصلي"].apply(extract_branch)
+    df["تم تصحيح الفرع تلقائيًا؟"] = df["الفرع قبل التصحيح"].astype(str).str.strip().eq("بدون فرع محدد")
+    df["الفرع"] = df["الفرع قبل التصحيح"].replace({"بدون فرع محدد": "العقيق"})
     df["الحالة"] = col_or_blank(df, cols["status"]).replace("", "غير محدد")
     df["المنتج"] = col_or_blank(df, cols["product"]).apply(normalize_product_name)
     df["الحشوة"] = col_or_blank(df, cols["variety"]).apply(normalize_variety)
@@ -621,9 +749,22 @@ def prepare_data(raw_df):
     df["سعر الحبة رقم"] = col_or_default(df, cols["unit_price"], "0").apply(clean_money)
     df["سعر الحشوة رقم"] = col_or_default(df, cols["variety_price"], "0").apply(clean_money)
     df["الخصم"] = col_or_blank(df, cols["discount"])
-    df["تاريخ التوصيل الأصلي"] = col_or_blank(df, cols["delivery_date"])
-    df["وقت الاستلام الأصلي"] = col_or_blank(df, cols["pickup_time"])
-    df["تاريخ ووقت الاستلام"] = [parse_datetime_parts(d, t) for d, t in zip(df["تاريخ التوصيل الأصلي"], df["وقت الاستلام الأصلي"])]
+    df["تاريخ التوصيل قبل التنظيف"] = col_or_blank(df, cols["delivery_date"])
+    df["وقت الاستلام قبل التنظيف"] = col_or_blank(df, cols["pickup_time"])
+
+    cleaned_datetime_parts = [
+        clean_delivery_pickup_values(d, t)
+        for d, t in zip(df["تاريخ التوصيل قبل التنظيف"], df["وقت الاستلام قبل التنظيف"])
+    ]
+
+    df["تاريخ التوصيل الأصلي"] = [x[0] for x in cleaned_datetime_parts]
+    df["وقت الاستلام الأصلي"] = [x[1] for x in cleaned_datetime_parts]
+    df["تم تنظيف التاريخ/الوقت؟"] = [bool(x[2]) for x in cleaned_datetime_parts]
+
+    df["تاريخ ووقت الاستلام"] = [
+        parse_datetime_parts(d, t)
+        for d, t in zip(df["تاريخ التوصيل الأصلي"], df["وقت الاستلام الأصلي"])
+    ]
     df["تاريخ التحليل"] = pd.to_datetime(df["تاريخ ووقت الاستلام"], errors="coerce").dt.date
     df["ساعة رقم"] = pd.to_datetime(df["تاريخ ووقت الاستلام"], errors="coerce").dt.hour
     df["الساعة"] = df["ساعة رقم"].apply(hour_label)
@@ -636,7 +777,14 @@ def prepare_data(raw_df):
     df["يحتاج متابعة؟"] = df["سبب المتابعة"].astype(str).str.len() > 0
 
     # Order-level table without duplicated order total.
-    group = df.sort_values(["تاريخ ووقت الاستلام", "رقم الطلب الموحد"], na_position="last").groupby("رقم الطلب الموحد", dropna=False)
+    # Safe sorting for Streamlit Cloud / newer Pandas versions:
+    # avoid sorting directly on mixed/object/category-like columns.
+    df["_sort_datetime_safe"] = pd.to_datetime(df["تاريخ ووقت الاستلام"], errors="coerce")
+    df["_sort_order_safe"] = df["رقم الطلب الموحد"].astype(str)
+    group = (
+        df.sort_values(["_sort_datetime_safe", "_sort_order_safe"], na_position="last")
+        .groupby("رقم الطلب الموحد", dropna=False)
+    )
     order_level = group.agg(
         رقم_الطلب=("رقم الطلب الظاهر", "first"),
         العميل=("العميل", "first"),
@@ -673,6 +821,8 @@ def prepare_data(raw_df):
         order_level["ساعة رقم"] = pd.NA
     order_level["ساعة رقم"] = pd.to_numeric(order_level["ساعة رقم"], errors="coerce")
 
+    df = df.drop(columns=["_sort_datetime_safe", "_sort_order_safe"], errors="ignore")
+    order_level = order_level.drop(columns=["_sort_datetime_safe", "_sort_order_safe"], errors="ignore")
     return df, order_level, cols
 
 
@@ -858,7 +1008,11 @@ def build_reports(items, orders):
 
     add_issue("تاريخ توصيل ناقص", items["تاريخ التوصيل الأصلي"].astype(str).str.strip().eq(""), "عالية")
     add_issue("وقت استلام ناقص", items["وقت الاستلام الأصلي"].astype(str).str.strip().eq(""), "عالية")
-    add_issue("فرع غير محدد", items["الفرع"].eq("العقيق"), "متوسطة")
+    if "تم تنظيف التاريخ/الوقت؟" in items.columns:
+        add_issue("تم تنظيف التاريخ/الوقت تلقائيًا", items["تم تنظيف التاريخ/الوقت؟"].astype(bool), "منخفضة")
+    add_issue("فرع غير محدد", items["الفرع"].eq("بدون فرع محدد"), "متوسطة")
+    if "تم تصحيح الفرع تلقائيًا؟" in items.columns:
+        add_issue("تم تصحيح الفرع تلقائيًا إلى العقيق", items["تم تصحيح الفرع تلقائيًا؟"].astype(bool), "منخفضة")
     add_issue("حالة طلب ناقصة", items["الحالة"].astype(str).str.strip().isin(["", "غير محدد"]), "متوسطة")
     add_issue("منتج بدون اسم", items["المنتج"].eq("بدون اسم منتج"), "عالية")
     add_issue("حشوة ناقصة للمنتجات", (~items["إضافة؟"]) & items["الحشوة"].astype(str).str.strip().eq(""), "منخفضة")
@@ -868,11 +1022,16 @@ def build_reports(items, orders):
     quality_detail = items[
         items["تاريخ التوصيل الأصلي"].astype(str).str.strip().eq("") |
         items["وقت الاستلام الأصلي"].astype(str).str.strip().eq("") |
-        items["الفرع"].eq("العقيق") |
+        items["الفرع"].eq("بدون فرع محدد") |
         items["المنتج"].eq("بدون اسم منتج") |
         items["قيمة الطلب رقم"].fillna(0).eq(0)
     ].copy()
-    reports["data_quality_details"] = quality_detail[[c for c in ["رقم الطلب الظاهر", "رقم الطلب الموحد", "الفرع", "الحالة", "تاريخ التوصيل الأصلي", "وقت الاستلام الأصلي", "العميل", "المنتج", "قيمة الطلب رقم"] if c in quality_detail.columns]]
+    reports["data_quality_details"] = quality_detail[[c for c in [
+        "رقم الطلب الظاهر", "رقم الطلب الموحد", "الفرع قبل التصحيح", "الفرع", "تم تصحيح الفرع تلقائيًا؟", "الحالة",
+        "تاريخ التوصيل قبل التنظيف", "وقت الاستلام قبل التنظيف",
+        "تاريخ التوصيل الأصلي", "وقت الاستلام الأصلي", "تم تنظيف التاريخ/الوقت؟",
+        "العميل", "المنتج", "قيمة الطلب رقم"
+    ] if c in quality_detail.columns]]
 
     if not active_items.empty:
         camp = active_items.groupby("الحملة", dropna=False).agg(
@@ -1166,7 +1325,7 @@ def build_v83_advanced_reports(items, active_items, active_orders, reports):
         issue_masks = pd.DataFrame({
             "تاريخ_ناقص": quality["تاريخ التوصيل الأصلي"].astype(str).str.strip().eq(""),
             "وقت_ناقص": quality["وقت الاستلام الأصلي"].astype(str).str.strip().eq(""),
-            "فرع_غير_محدد": quality["الفرع"].eq("العقيق"),
+            "فرع_غير_محدد": quality["الفرع"].eq("بدون فرع محدد"),
             "منتج_بدون_اسم": quality["المنتج"].eq("بدون اسم منتج"),
             "قيمة_صفرية": quality["قيمة الطلب رقم"].fillna(0).eq(0),
             "حشوة_ناقصة": (~quality["إضافة؟"]) & quality["الحشوة"].astype(str).str.strip().eq(""),
@@ -1588,7 +1747,7 @@ def build_production_queue(active_items):
         q["نطاق ساعة الاستلام"] = "بدون وقت"
 
     cols = [
-        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
+        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع قبل التصحيح", "الفرع", "تم تصحيح الفرع تلقائيًا؟", "رقم الطلب الظاهر", "رقم الطلب الموحد",
         "الحالة", "العميل", "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم",
         "أولوية", "سبب المتابعة", "رقم الجوال المستخرج", "واتساب", "الملاحظة",
         "تاريخ ووقت الاستلام", "ساعة رقم"
@@ -1611,7 +1770,7 @@ def build_action_center(active_items):
 
     missing_date = a["تاريخ التوصيل الأصلي"].astype(str).str.strip().eq("") if "تاريخ التوصيل الأصلي" in a.columns else False
     missing_time = a["وقت الاستلام الأصلي"].astype(str).str.strip().eq("") if "وقت الاستلام الأصلي" in a.columns else False
-    missing_branch = a["الفرع"].astype(str).eq("العقيق") if "الفرع" in a.columns else False
+    missing_branch = a["الفرع"].astype(str).eq("بدون فرع محدد") if "الفرع" in a.columns else False
     action_mask = a["يحتاج متابعة؟"].astype(bool) | missing_date | missing_time | missing_branch
     a = a[action_mask].copy()
 
@@ -1625,7 +1784,7 @@ def build_action_center(active_items):
             parts.append("تاريخ ناقص")
         if not str(row.get("وقت الاستلام الأصلي", "")).strip():
             parts.append("وقت ناقص")
-        if str(row.get("الفرع", "")) == "العقيق":
+        if str(row.get("الفرع", "")) == "بدون فرع محدد":
             parts.append("فرع غير محدد")
         seen = []
         for p in parts:
@@ -1655,7 +1814,7 @@ def build_action_center(active_items):
 
     cols = [
         "الأولوية", "حالة المتابعة", "نوع الإجراء", "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض",
-        "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
+        "الفرع قبل التصحيح", "الفرع", "تم تصحيح الفرع تلقائيًا؟", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
         "المنتج", "الحشوة", "الكمية رقم", "رقم الجوال المستخرج", "واتساب",
         "ملاحظة داخلية", "الملاحظة", "تاريخ ووقت الاستلام", "ساعة رقم"
     ]
@@ -2914,9 +3073,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.3",
+        "⬇️ تحميل Excel شامل كل التقارير V8.3.3",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_3.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_3_3.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
