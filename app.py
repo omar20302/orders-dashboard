@@ -24,7 +24,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.5.3 Safe Charts Fix"
+APP_VERSION = "V8.5.4 Global Chart Guard"
 
 
 # =========================
@@ -1953,6 +1953,210 @@ def make_safe_bar(df, x_col, y_col, *, title="", text_col=None, color_col=None, 
     )
 
 
+
+# =========================
+# V8.5.4 Global Plotly Guard
+# يمنع انهيار التطبيق لو أي رسم Plotly استخدم عمود مترجم أو غير موجود
+# بدون تغيير منطق التقارير أو حذف أي وظيفة
+# =========================
+
+def _chart_reverse_label_map():
+    reverse = {}
+    try:
+        reverse.update({v: k for k, v in UI_EN.items()})
+        reverse.update({v: k for k, v in VALUE_EN.items()})
+    except Exception:
+        pass
+    return reverse
+
+
+def _resolve_plotly_column(data_frame, value, prefer_numeric=False):
+    """Resolve a Plotly column argument to a real dataframe column."""
+    if data_frame is None or not hasattr(data_frame, "columns"):
+        return value
+
+    cols = list(data_frame.columns)
+    if value is None:
+        return None
+
+    # Lists/dicts used by Plotly should stay as-is unless they are a list of column names.
+    if isinstance(value, (list, tuple)):
+        resolved = []
+        for item in value:
+            resolved_item = _resolve_plotly_column(data_frame, item, prefer_numeric=prefer_numeric)
+            if resolved_item is not None:
+                resolved.append(resolved_item)
+        return resolved or value
+
+    if not isinstance(value, str):
+        return value
+
+    if value in cols:
+        return value
+
+    reverse = _chart_reverse_label_map()
+    if value in reverse and reverse[value] in cols:
+        return reverse[value]
+
+    # Normalize very common English translated labels back to Arabic source columns
+    common_reverse = {
+        "Orders": "عدد الطلبات",
+        "Order count": "عدد الطلبات",
+        "Branch": "الفرع",
+        "Hour": "الساعة",
+        "Status": "الحالة",
+        "Sales": "المبيعات",
+        "Quantity": "الكمية",
+        "Product": "المنتج",
+        "Filling": "الحشوة",
+        "Campaign": "الحملة",
+        "Need action": "يحتاج متابعة",
+        "Pickup hour range": "نطاق ساعة الاستلام",
+    }
+    if value in common_reverse and common_reverse[value] in cols:
+        return common_reverse[value]
+
+    # Fallbacks by intent
+    numeric_cols = []
+    non_numeric_cols = []
+    try:
+        numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(data_frame[c])]
+        non_numeric_cols = [c for c in cols if c not in numeric_cols]
+    except Exception:
+        pass
+
+    if prefer_numeric and numeric_cols:
+        return numeric_cols[0]
+    if (not prefer_numeric) and non_numeric_cols:
+        return non_numeric_cols[0]
+    if cols:
+        return cols[0]
+    return value
+
+
+def _clean_plotly_kwargs(data_frame, kwargs):
+    """Resolve fragile dataframe column bindings before Plotly Express sees them."""
+    if data_frame is None or not hasattr(data_frame, "columns"):
+        return kwargs
+
+    out = dict(kwargs)
+
+    # Positional data bindings
+    for key in ["x", "y", "color", "text", "names", "values", "size", "hover_name", "facet_row", "facet_col", "animation_frame", "line_group", "symbol"]:
+        if key in out:
+            out[key] = _resolve_plotly_column(
+                data_frame,
+                out[key],
+                prefer_numeric=key in ["y", "values", "size"]
+            )
+
+    # hover_data can be list/dict
+    if "hover_data" in out:
+        hd = out["hover_data"]
+        if isinstance(hd, dict):
+            new_hd = {}
+            for k, v in hd.items():
+                rk = _resolve_plotly_column(data_frame, k)
+                if rk in data_frame.columns:
+                    new_hd[rk] = v
+            out["hover_data"] = new_hd if new_hd else None
+        elif isinstance(hd, (list, tuple)):
+            new_hd = []
+            for k in hd:
+                rk = _resolve_plotly_column(data_frame, k)
+                if rk in data_frame.columns:
+                    new_hd.append(rk)
+            out["hover_data"] = new_hd if new_hd else None
+
+    # Labels must keep original dataframe column keys, values can be translated.
+    if "labels" not in out or out["labels"] is None:
+        try:
+            out["labels"] = px_labels()
+        except Exception:
+            pass
+
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _install_plotly_guard():
+    if getattr(px, "_mad_guard_installed", False):
+        return
+
+    px._mad_original_bar = px.bar
+    px._mad_original_line = px.line
+    px._mad_original_scatter = px.scatter
+    px._mad_original_pie = px.pie
+
+    def guarded_bar(data_frame=None, *args, **kwargs):
+        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
+        try:
+            return px._mad_original_bar(data_frame, *args, **kwargs)
+        except ValueError:
+            # Last-resort fallback: pick safe x/y columns and keep the chart alive.
+            if data_frame is not None and hasattr(data_frame, "columns") and len(data_frame.columns) > 0:
+                safe_x = _resolve_plotly_column(data_frame, kwargs.get("x"), prefer_numeric=False)
+                safe_y = _resolve_plotly_column(data_frame, kwargs.get("y"), prefer_numeric=True)
+                basic_kwargs = {
+                    "x": safe_x,
+                    "y": safe_y,
+                    "title": kwargs.get("title"),
+                    "labels": kwargs.get("labels", px_labels() if "px_labels" in globals() else None),
+                }
+                return px._mad_original_bar(data_frame, **{k:v for k,v in basic_kwargs.items() if v is not None})
+            return go.Figure()
+
+    def guarded_line(data_frame=None, *args, **kwargs):
+        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
+        try:
+            return px._mad_original_line(data_frame, *args, **kwargs)
+        except ValueError:
+            if data_frame is not None and hasattr(data_frame, "columns") and len(data_frame.columns) > 0:
+                safe_x = _resolve_plotly_column(data_frame, kwargs.get("x"), prefer_numeric=False)
+                safe_y = _resolve_plotly_column(data_frame, kwargs.get("y"), prefer_numeric=True)
+                basic_kwargs = {
+                    "x": safe_x,
+                    "y": safe_y,
+                    "markers": kwargs.get("markers", True),
+                    "title": kwargs.get("title"),
+                    "labels": kwargs.get("labels", px_labels() if "px_labels" in globals() else None),
+                }
+                return px._mad_original_line(data_frame, **{k:v for k,v in basic_kwargs.items() if v is not None})
+            return go.Figure()
+
+    def guarded_scatter(data_frame=None, *args, **kwargs):
+        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
+        try:
+            return px._mad_original_scatter(data_frame, *args, **kwargs)
+        except ValueError:
+            if data_frame is not None and hasattr(data_frame, "columns") and len(data_frame.columns) > 0:
+                safe_x = _resolve_plotly_column(data_frame, kwargs.get("x"), prefer_numeric=True)
+                safe_y = _resolve_plotly_column(data_frame, kwargs.get("y"), prefer_numeric=True)
+                basic_kwargs = {
+                    "x": safe_x,
+                    "y": safe_y,
+                    "title": kwargs.get("title"),
+                    "labels": kwargs.get("labels", px_labels() if "px_labels" in globals() else None),
+                }
+                return px._mad_original_scatter(data_frame, **{k:v for k,v in basic_kwargs.items() if v is not None})
+            return go.Figure()
+
+    def guarded_pie(data_frame=None, *args, **kwargs):
+        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
+        try:
+            return px._mad_original_pie(data_frame, *args, **kwargs)
+        except ValueError:
+            return go.Figure()
+
+    px.bar = guarded_bar
+    px.line = guarded_line
+    px.scatter = guarded_scatter
+    px.pie = guarded_pie
+    px._mad_guard_installed = True
+
+
+_install_plotly_guard()
+
+
 def translate_fig_for_language(fig):
     if not is_english_ui():
         return fig
@@ -3417,7 +3621,7 @@ with tab_branch:
         with col2:
             bh = b_orders.groupby("الساعة")["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
             if not bh.empty:
-                fig = px.line(bh, x="الساعة", y="عدد الطلبات", markers=True, title="ضغط الفرع حسب الساعة")
+                fig = px.line(bh, x="الساعة", y="عدد الطلبات", markers=True, title=ui("ضغط الفرع حسب الساعة"), labels=px_labels())
                 st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=chart_config())
         display_df(b_items[[c for c in ["رقم الطلب الظاهر", "الحالة", "وقت الاستلام الأصلي", "العميل", "المنتج", "الحشوة", "الكمية رقم", "سبب المتابعة", "الملاحظة"] if c in b_items.columns]], 500)
     else:
