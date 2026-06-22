@@ -24,7 +24,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.5.1 Language Fix Safe"
+APP_VERSION = "V8.5.2 Plotly Column Fix"
 
 
 # =========================
@@ -1863,6 +1863,34 @@ def translate_df_for_display(df):
     out = out.rename(columns={c: ui(c) for c in out.columns})
     return out
 
+
+def px_labels(mapping=None):
+    """Return Plotly labels without changing dataframe column names."""
+    base_mapping = {
+        "عدد الطلبات": ui("عدد الطلبات"),
+        "الفرع": ui("الفرع"),
+        "الحالة": ui("الحالة"),
+        "الساعة": ui("الساعة"),
+        "الحشوة": ui("الحشوة"),
+        "المنتج": ui("المنتج"),
+        "المبيعات": ui("المبيعات"),
+        "الكمية": ui("الكمية"),
+        "الكمية رقم": ui("الكمية رقم"),
+        "قيمة الطلب": ui("قيمة الطلب"),
+        "إجمالي المنتج رقم": ui("إجمالي المنتج رقم"),
+        "عدد_الطلبات": ui("عدد_الطلبات"),
+        "المبيعات_منتجات": ui("المبيعات_منتجات"),
+        "متوسط_الطلب": ui("متوسط_الطلب"),
+        "تصنيف الإضافة": ui("تصنيف الإضافة"),
+        "الحملة": ui("الحملة"),
+        "سبب المتابعة": ui("سبب المتابعة"),
+        "نطاق ساعة الاستلام": ui("نطاق ساعة الاستلام"),
+    }
+    if mapping:
+        base_mapping.update(mapping)
+    return base_mapping
+
+
 def translate_fig_for_language(fig):
     if not is_english_ui():
         return fig
@@ -2819,11 +2847,11 @@ with tab_production:
                 by_hour_q = queue_view.groupby(by_hour_col, dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
                 by_hour_q["_sort"] = by_hour_q[by_hour_col].apply(hour_range_sort_value)
                 by_hour_q = by_hour_q.sort_values("_sort").drop(columns=["_sort"])
-                fig = px.bar(by_hour_q, x=by_hour_col, y=ui("عدد الطلبات"), text=ui("عدد الطلبات"), title="ضغط التجهيز حسب نطاق الساعة")
+                fig = px.bar(by_hour_q, x=by_hour_col, y="عدد الطلبات", text="عدد الطلبات", title="ضغط التجهيز حسب نطاق الساعة")
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
             with qc2:
                 by_branch_q = queue_view.groupby("الفرع", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
-                fig = px.bar(by_branch_q, x="الفرع", y=ui("عدد الطلبات"), text=ui("عدد الطلبات"), title="طلبات التجهيز حسب الفرع")
+                fig = px.bar(by_branch_q, x="الفرع", y="عدد الطلبات", text="عدد الطلبات", title="طلبات التجهيز حسب الفرع")
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
 
         st.markdown('<div class="mini-title">جدول التجهيز</div>', unsafe_allow_html=True)
@@ -3037,7 +3065,7 @@ with tab_sales:
     st.markdown(f'<div class="mini-title">{ui("الحالات حسب الفرع")}</div>', unsafe_allow_html=True)
     status_df = reports.get("status_report", pd.DataFrame())
     if not status_df.empty:
-        fig = px.bar(status_df, x="الفرع", y=ui("عدد الطلبات"), color="الحالة", barmode="group", title="حالات الطلبات حسب الفرع")
+        fig = px.bar(status_df, x="الفرع", y="عدد الطلبات", color="الحالة", barmode="group", title=ui("حالات الطلبات حسب الفرع"), labels=px_labels())
         st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
     display_df(status_df, 330)
 
@@ -3327,7 +3355,7 @@ with tab_branch:
         with col2:
             bh = b_orders.groupby("الساعة")["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
             if not bh.empty:
-                fig = px.line(bh, x="الساعة", y=ui("عدد الطلبات"), markers=True, title="ضغط الفرع حسب الساعة")
+                fig = px.line(bh, x="الساعة", y="عدد الطلبات", markers=True, title="ضغط الفرع حسب الساعة")
                 st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=chart_config())
         display_df(b_items[[c for c in ["رقم الطلب الظاهر", "الحالة", "وقت الاستلام الأصلي", "العميل", "المنتج", "الحشوة", "الكمية رقم", "سبب المتابعة", "الملاحظة"] if c in b_items.columns]], 500)
     else:
@@ -3351,7 +3379,7 @@ with tab_product:
         with col1:
             pb = p_items.groupby("الفرع")["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات")).sort_values(ui("عدد الطلبات"), ascending=False)
             if not pb.empty:
-                fig = px.bar(pb, x="الفرع", y=ui("عدد الطلبات"), text=ui("عدد الطلبات"), title="المنتج حسب الفرع")
+                fig = px.bar(pb, x="الفرع", y="عدد الطلبات", text="عدد الطلبات", title="المنتج حسب الفرع")
                 st.plotly_chart(fig_layout(fig, 420), use_container_width=True, config=chart_config())
         with col2:
             pv = p_items[p_items["الحشوة"].astype(str).str.len() > 0].groupby("الحشوة")["الكمية رقم"].sum().reset_index(name="الكمية").sort_values("الكمية", ascending=False)
