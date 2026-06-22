@@ -22,7 +22,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.4.1 Courier Timezone Fix"
+APP_VERSION = "V8.4.2 Courier Time Parsing Fix"
 
 
 # =========================
@@ -724,6 +724,52 @@ def parse_datetime_parts(date_value, time_value):
     return pd.NaT
 
 
+
+
+def parse_courier_datetime_parts(date_value, pickup_time_value, courier_time_value):
+    """
+    قراءة وقت التسليم للمندوب بشكل صحيح.
+
+    القواعد:
+    - لو وقت التسليم للمندوب فارغ => NaT وليس تاريخ اليوم/تاريخ التوصيل 00:00.
+    - لو وقت التسليم للمندوب وقت فقط مثل 9:41 PM => يدمج مع تاريخ التوصيل.
+    - لو وقت التسليم للمندوب يحتوي تاريخ+وقت => يقرأ كما هو.
+    - لو وقت التسليم للمندوب بعد منتصف الليل وكان أقل من وقت الاستلام بفارق كبير،
+      نعتبره اليوم التالي.
+    """
+    raw_courier = normalize_arabic_digits(courier_time_value).strip()
+
+    if (
+        not raw_courier
+        or raw_courier.lower() in ["nan", "none", "(not set)", "not set", "-", "nat"]
+    ):
+        return pd.NaT
+
+    pickup_dt = parse_datetime_parts(date_value, pickup_time_value)
+
+    # If courier field already contains a date, parse it directly.
+    if text_has_date(raw_courier):
+        parsed = parse_datetime_parts("", raw_courier)
+    else:
+        parsed = parse_datetime_parts(date_value, raw_courier)
+
+    if pd.isna(parsed):
+        return pd.NaT
+
+    # Time-only courier values are merged with delivery date.
+    # If the courier time looks like after midnight for a late-night pickup,
+    # shift by +1 day only when the negative difference is clearly large.
+    if not text_has_date(raw_courier) and not pd.isna(pickup_dt):
+        try:
+            diff_minutes = (pd.Timestamp(parsed) - pd.Timestamp(pickup_dt)).total_seconds() / 60
+            if diff_minutes < -360:
+                parsed = pd.Timestamp(parsed) + pd.Timedelta(days=1)
+        except Exception:
+            pass
+
+    return parsed
+
+
 def hour_label(hour):
     if pd.isna(hour):
         return "بدون وقت"
@@ -955,8 +1001,12 @@ def prepare_data(raw_df):
     # V8.4.0: وقت التسليم للمندوب
     # لو العمود يحتوي تاريخ+وقت يقرأ مباشرة، ولو يحتوي وقت فقط يدمج مع تاريخ التوصيل.
     df["وقت التسليم للمندوب"] = [
-        parse_datetime_parts(d, t)
-        for d, t in zip(df["تاريخ التوصيل الأصلي"], df["وقت التسليم للمندوب قبل التنظيف"])
+        parse_courier_datetime_parts(d, p, c)
+        for d, p, c in zip(
+            df["تاريخ التوصيل الأصلي"],
+            df["وقت الاستلام الأصلي"],
+            df["وقت التسليم للمندوب قبل التنظيف"]
+        )
     ]
     df["تاريخ التحليل"] = pd.to_datetime(df["تاريخ ووقت الاستلام"], errors="coerce").dt.date
     df["ساعة رقم"] = pd.to_datetime(df["تاريخ ووقت الاستلام"], errors="coerce").dt.hour
@@ -2219,9 +2269,10 @@ def build_late_orders_reports(active_items, active_orders, grace_minutes=10, ris
 
     if "ملغي" in orders.columns:
         orders = orders[~orders["ملغي"].astype(bool)].copy()
-    if "الحالة" in orders.columns:
-        orders = orders[~orders["الحالة"].apply(is_completed_for_late_status)].copy()
-
+    # V8.4.2:
+    # لا نستبعد Delivered هنا لأن التقرير يحتاج يحسب التأخير الفعلي
+    # من وقت التسليم للمندوب للطلبات المسلّمة.
+    # نستبعد الملغي فقط من خلال عمود ملغي أعلاه.
     if orders.empty:
         return empty_pack
 
@@ -3979,9 +4030,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.4.0",
+        "⬇️ تحميل Excel شامل كل التقارير V8.4.2",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_4_0.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_4_2.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
