@@ -3,6 +3,7 @@ import html
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -21,7 +22,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.3.8 Heatmap Text Fix"
+APP_VERSION = "V8.3.9 Late Orders Report"
 
 
 # =========================
@@ -1885,6 +1886,14 @@ def build_excel_export(reports, filters_summary):
             "orders_active": "Daily Operations",
             "production_queue": "Production Queue",
             "action_center": "Action Center",
+            "late_summary": "Late Summary",
+            "late_orders": "Late Orders",
+            "late_risk_orders": "Risk Orders",
+            "late_action_center": "Late Action Center",
+            "late_by_branch": "Late by Branch",
+            "late_by_hour": "Late by Hour",
+            "late_branch_hour_heatmap": "Late Heatmap",
+            "late_reasons": "Late Reasons",
             "advanced_executive_summary": "V83 Executive Summary",
             "advanced_branch_ranking": "V83 Branch Ranking",
             "advanced_product_value": "V83 Product Value",
@@ -2054,6 +2063,280 @@ def build_action_center(active_items):
     if sort_cols:
         a = a.sort_values(sort_cols, na_position="last")
     return a.drop(columns=["_priority_sort"], errors="ignore")
+
+
+
+
+def is_completed_for_late_status(value):
+    """Statuses that should not be treated as late operational orders."""
+    low = str(value).strip().lower()
+    completed_keywords = [
+        "delivered", "delivery complete", "completed", "complete", "done", "closed", "finished",
+        "picked up", "pickup complete",
+        "تم التوصيل", "تم التسليم", "تم الاستلام", "مكتمل", "مكتملة", "منتهي", "منتهية", "مغلق", "مغلقة",
+    ]
+    return any(k in low for k in completed_keywords)
+
+
+def now_riyadh_naive():
+    """Return current Riyadh time as timezone-naive datetime to compare with sheet datetimes."""
+    try:
+        return datetime.now(ZoneInfo("Asia/Riyadh")).replace(tzinfo=None)
+    except Exception:
+        return datetime.now()
+
+
+def format_minutes_ar(minutes):
+    """Format minutes into Arabic short duration."""
+    try:
+        minutes = int(round(float(minutes)))
+    except Exception:
+        return "-"
+    minutes = abs(minutes)
+    hours = minutes // 60
+    mins = minutes % 60
+    if hours and mins:
+        return f"{hours} س {mins} د"
+    if hours:
+        return f"{hours} س"
+    return f"{mins} د"
+
+
+def join_unique_text(values, sep="، ", limit=8):
+    out = []
+    for value in values:
+        if pd.isna(value):
+            continue
+        text = str(value).strip()
+        if not text or text.lower() in ["nan", "none", "-"]:
+            continue
+        for part in [p.strip() for p in re.split(r"[،,\n]+", text) if p.strip()]:
+            if part not in out:
+                out.append(part)
+            if len(out) >= limit:
+                break
+        if len(out) >= limit:
+            break
+    return sep.join(out)
+
+
+def first_non_empty(values):
+    for value in values:
+        if pd.isna(value):
+            continue
+        text = str(value).strip()
+        if text and text.lower() not in ["nan", "none", "-"]:
+            return text
+    return ""
+
+
+def build_late_orders_reports(active_items, active_orders, grace_minutes=10, risk_window_minutes=30, current_time=None):
+    """
+    Late Orders report pack.
+    Logic:
+    - Late = pickup datetime passed by more than grace_minutes.
+    - At risk = pickup datetime within next risk_window_minutes.
+    - Cancelled and completed/delivered statuses are excluded.
+    """
+    empty_pack = {
+        "late_orders": pd.DataFrame(),
+        "late_risk_orders": pd.DataFrame(),
+        "late_action_center": pd.DataFrame(),
+        "late_by_branch": pd.DataFrame(),
+        "late_by_hour": pd.DataFrame(),
+        "late_branch_hour_heatmap": pd.DataFrame(),
+        "late_reasons": pd.DataFrame(),
+        "late_summary": pd.DataFrame(),
+    }
+
+    if active_orders is None or active_orders.empty:
+        return empty_pack
+
+    now_dt = current_time or now_riyadh_naive()
+    orders = active_orders.copy()
+    orders["تاريخ ووقت الاستلام"] = pd.to_datetime(orders["تاريخ ووقت الاستلام"], errors="coerce")
+    orders = orders[orders["تاريخ ووقت الاستلام"].notna()].copy()
+
+    if orders.empty:
+        return empty_pack
+
+    # Exclude cancelled/completed.
+    if "ملغي" in orders.columns:
+        orders = orders[~orders["ملغي"].astype(bool)].copy()
+    if "الحالة" in orders.columns:
+        orders = orders[~orders["الحالة"].apply(is_completed_for_late_status)].copy()
+
+    if orders.empty:
+        return empty_pack
+
+    # Enrich with item-level details.
+    if active_items is not None and not active_items.empty:
+        item_src = active_items.copy()
+        item_summary = item_src.groupby("رقم الطلب الموحد", dropna=False).agg(
+            المنتجات=("المنتج", lambda s: join_unique_text(s, sep=" | ", limit=10)),
+            الحشوات=("الحشوة", lambda s: join_unique_text(s, sep=" | ", limit=10)),
+            الكمية=("الكمية رقم", "sum"),
+            أسباب_المتابعة=("سبب المتابعة", lambda s: join_unique_text(s, sep="، ", limit=10)),
+            الملاحظات=("الملاحظة", lambda s: join_unique_text(s, sep=" | ", limit=6)),
+            الجوال=("رقم الجوال المستخرج", first_non_empty),
+        ).reset_index()
+        orders = orders.merge(item_summary, on="رقم الطلب الموحد", how="left")
+    else:
+        orders["المنتجات"] = ""
+        orders["الحشوات"] = ""
+        orders["الكمية"] = 0
+        orders["أسباب_المتابعة"] = ""
+        orders["الملاحظات"] = ""
+        orders["الجوال"] = ""
+
+    orders["الآن بتوقيت السعودية"] = now_dt.strftime("%Y-%m-%d %H:%M")
+    orders["دقائق من موعد الاستلام"] = ((now_dt - orders["تاريخ ووقت الاستلام"]).dt.total_seconds() / 60).round(0).astype("Int64")
+    orders["دقائق حتى الاستلام"] = ((orders["تاريخ ووقت الاستلام"] - now_dt).dt.total_seconds() / 60).round(0).astype("Int64")
+
+    def late_status(row):
+        late_min = int(row["دقائق من موعد الاستلام"]) if not pd.isna(row["دقائق من موعد الاستلام"]) else 0
+        to_pickup = int(row["دقائق حتى الاستلام"]) if not pd.isna(row["دقائق حتى الاستلام"]) else 999999
+
+        if late_min > 60:
+            return "تأخير حرج"
+        if late_min > 15:
+            return "تأخير متوسط"
+        if late_min > int(grace_minutes):
+            return "تأخير بسيط"
+        if 0 <= to_pickup <= int(risk_window_minutes):
+            return "قريب يتأخر"
+        return "ضمن الوقت"
+
+    def late_priority(status):
+        return {
+            "تأخير حرج": "حرجة",
+            "تأخير متوسط": "عالية",
+            "تأخير بسيط": "متوسطة",
+            "قريب يتأخر": "تنبيه",
+        }.get(status, "عادية")
+
+    def suggested_action(row):
+        status = row.get("حالة التأخير", "")
+        reasons = str(row.get("أسباب_المتابعة", ""))
+        if status == "تأخير حرج":
+            return "تواصل مع العميل فورًا + راجع الفرع والإنتاج"
+        if status == "تأخير متوسط":
+            return "راجع الفرع وأعطِ الطلب أولوية عاجلة"
+        if status == "تأخير بسيط":
+            return "متابعة تجهيز الطلب قبل زيادة التأخير"
+        if status == "قريب يتأخر":
+            if "يحتاج صورة" in reasons or "يحتاج تواصل" in reasons:
+                return "حل المتابعة فورًا قبل دخول الطلب في التأخير"
+            return "تأكد من جاهزية الطلب قبل الموعد"
+        return ""
+
+    orders["حالة التأخير"] = orders.apply(late_status, axis=1)
+    orders["الأولوية"] = orders["حالة التأخير"].apply(late_priority)
+    orders["الإجراء المقترح"] = orders.apply(suggested_action, axis=1)
+    orders["مدة التأخير"] = orders["دقائق من موعد الاستلام"].apply(lambda x: format_minutes_ar(x) if pd.notna(x) and int(x) > 0 else "-")
+    orders["باقي على الموعد"] = orders["دقائق حتى الاستلام"].apply(lambda x: format_minutes_ar(x) if pd.notna(x) and int(x) >= 0 else "-")
+    orders["وقت الاستلام"] = orders["تاريخ ووقت الاستلام"].dt.strftime("%Y-%m-%d %I:%M %p")
+
+    focus = orders[orders["حالة التأخير"].isin(["تأخير حرج", "تأخير متوسط", "تأخير بسيط", "قريب يتأخر"])].copy()
+    if focus.empty:
+        return empty_pack | {
+            "late_summary": pd.DataFrame([
+                {"المؤشر": "الطلبات المتأخرة", "القيمة": 0},
+                {"المؤشر": "طلبات قريبة من التأخير", "القيمة": 0},
+                {"المؤشر": "آخر تحديث", "القيمة": now_dt.strftime("%Y-%m-%d %H:%M")},
+            ])
+        }
+
+    sort_map = {"تأخير حرج": 0, "تأخير متوسط": 1, "تأخير بسيط": 2, "قريب يتأخر": 3}
+    focus["_late_sort"] = focus["حالة التأخير"].map(sort_map).fillna(9)
+    focus = focus.sort_values(["_late_sort", "دقائق من موعد الاستلام"], ascending=[True, False]).drop(columns=["_late_sort"], errors="ignore")
+
+    late_only = focus[focus["حالة التأخير"].str.startswith("تأخير")].copy()
+    risk_only = focus[focus["حالة التأخير"].eq("قريب يتأخر")].copy()
+
+    display_cols = [
+        "الأولوية", "حالة التأخير", "الإجراء المقترح",
+        "مدة التأخير", "باقي على الموعد", "وقت الاستلام",
+        "الفرع", "رقم الطلب", "رقم الطلب الموحد", "الحالة", "العميل",
+        "قيمة الطلب", "المنتجات", "الحشوات", "الكمية",
+        "أسباب_المتابعة", "الجوال", "الملاحظات", "الساعة", "ساعة رقم",
+        "تاريخ ووقت الاستلام", "دقائق من موعد الاستلام", "دقائق حتى الاستلام"
+    ]
+    focus_display = focus[[c for c in display_cols if c in focus.columns]].copy()
+    late_display = late_only[[c for c in display_cols if c in late_only.columns]].copy()
+    risk_display = risk_only[[c for c in display_cols if c in risk_only.columns]].copy()
+
+    if not late_only.empty:
+        late_by_branch = late_only.groupby("الفرع", dropna=False).agg(
+            عدد_الطلبات_المتأخرة=("رقم الطلب الموحد", "nunique"),
+            متوسط_التأخير_دقيقة=("دقائق من موعد الاستلام", "mean"),
+            أقصى_تأخير_دقيقة=("دقائق من موعد الاستلام", "max"),
+            قيمة_الطلبات_المتأخرة=("قيمة الطلب", "sum"),
+        ).reset_index()
+        late_by_branch["متوسط_التأخير_دقيقة"] = late_by_branch["متوسط_التأخير_دقيقة"].round(1)
+        late_by_branch = late_by_branch.sort_values(["عدد_الطلبات_المتأخرة", "أقصى_تأخير_دقيقة"], ascending=False)
+
+        late_by_hour = late_only.groupby("الساعة", dropna=False).agg(
+            عدد_الطلبات_المتأخرة=("رقم الطلب الموحد", "nunique"),
+            متوسط_التأخير_دقيقة=("دقائق من موعد الاستلام", "mean"),
+            قيمة_الطلبات_المتأخرة=("قيمة الطلب", "sum"),
+        ).reset_index()
+        late_by_hour["متوسط_التأخير_دقيقة"] = late_by_hour["متوسط_التأخير_دقيقة"].round(1)
+
+        hour_order = late_only.groupby("الساعة", dropna=False)["ساعة رقم"].min().reset_index(name="ساعة رقم")
+        late_by_hour = late_by_hour.merge(hour_order, on="الساعة", how="left").sort_values("ساعة رقم", na_position="last").drop(columns=["ساعة رقم"], errors="ignore")
+
+        late_heat = late_only.pivot_table(
+            index="الفرع",
+            columns="الساعة",
+            values="رقم الطلب الموحد",
+            aggfunc="nunique",
+            fill_value=0,
+        )
+        if "ساعة رقم" in late_only.columns:
+            hour_map = late_only.drop_duplicates("الساعة").set_index("الساعة")["ساعة رقم"].to_dict()
+            late_heat = late_heat.reindex(sorted(late_heat.columns, key=lambda x: hour_map.get(x, 999)), axis=1)
+    else:
+        late_by_branch = pd.DataFrame()
+        late_by_hour = pd.DataFrame()
+        late_heat = pd.DataFrame()
+
+    reason_rows = []
+    for text in focus["أسباب_المتابعة"].fillna("").astype(str):
+        for r in [x.strip() for x in text.split("،") if x.strip()]:
+            reason_rows.append(r)
+    if reason_rows:
+        late_reasons = (
+            pd.Series(reason_rows)
+            .value_counts()
+            .rename("عدد الطلبات")
+            .reset_index()
+            .rename(columns={"index": "سبب المتابعة"})
+        )
+    else:
+        late_reasons = pd.DataFrame(columns=["سبب المتابعة", "عدد الطلبات"])
+
+    summary = pd.DataFrame([
+        {"المؤشر": "الطلبات المتأخرة", "القيمة": int(late_only["رقم الطلب الموحد"].nunique()) if not late_only.empty else 0},
+        {"المؤشر": "طلبات قريبة من التأخير", "القيمة": int(risk_only["رقم الطلب الموحد"].nunique()) if not risk_only.empty else 0},
+        {"المؤشر": "متوسط التأخير بالدقائق", "القيمة": round(float(late_only["دقائق من موعد الاستلام"].mean()), 1) if not late_only.empty else 0},
+        {"المؤشر": "أطول تأخير بالدقائق", "القيمة": int(late_only["دقائق من موعد الاستلام"].max()) if not late_only.empty else 0},
+        {"المؤشر": "قيمة الطلبات المتأخرة", "القيمة": float(late_only["قيمة الطلب"].sum()) if not late_only.empty else 0},
+        {"المؤشر": "آخر تحديث بتوقيت السعودية", "القيمة": now_dt.strftime("%Y-%m-%d %H:%M")},
+        {"المؤشر": "سماحية التأخير بالدقائق", "القيمة": int(grace_minutes)},
+        {"المؤشر": "نافذة خطر التأخير بالدقائق", "القيمة": int(risk_window_minutes)},
+    ])
+
+    return {
+        "late_orders": late_display,
+        "late_risk_orders": risk_display,
+        "late_action_center": focus_display,
+        "late_by_branch": late_by_branch,
+        "late_by_hour": late_by_hour,
+        "late_branch_hour_heatmap": late_heat,
+        "late_reasons": late_reasons,
+        "late_summary": summary,
+    }
 
 
 def build_branch_prep_detail(queue_df, branch):
@@ -2433,6 +2716,11 @@ selected_campaigns = st.sidebar.multiselect("الحملات", campaigns, default
 search_text = st.sidebar.text_input("بحث سريع", placeholder="رقم طلب / عميل / منتج / جوال")
 include_cancelled = st.sidebar.checkbox("إظهار الملغي ضمن التقارير", value=False)
 
+st.sidebar.markdown("### 🚨 إعدادات المتأخرات")
+late_grace_minutes = st.sidebar.number_input("سماحية التأخير بالدقائق", min_value=0, max_value=120, value=10, step=5)
+late_risk_window_minutes = st.sidebar.number_input("تنبيه قبل الموعد بالدقائق", min_value=5, max_value=180, value=30, step=5)
+
+
 filtered = items_all.copy()
 if available_dates and date_range:
     if isinstance(date_range, tuple) and len(date_range) == 2:
@@ -2476,6 +2764,9 @@ reports["action_center"] = build_action_center(active_items)
 # V8.3 advanced management reports
 reports.update(build_v83_advanced_reports(filtered, active_items, active_orders, reports))
 
+# V8.3.9 Late Orders reports
+reports.update(build_late_orders_reports(active_items, active_orders, grace_minutes=late_grace_minutes, risk_window_minutes=late_risk_window_minutes))
+
 # Core KPIs
 total_rows = len(filtered)
 total_orders = int(active_orders["رقم الطلب الموحد"].nunique()) if not active_orders.empty else 0
@@ -2486,6 +2777,12 @@ missing_date_count = int(filtered["تاريخ التوصيل الأصلي"].asty
 missing_time_count = int(filtered["وقت الاستلام الأصلي"].astype(str).str.strip().eq("").sum())
 addon_orders = int(active_orders["فيه إضافات"].sum()) if not active_orders.empty and "فيه إضافات" in active_orders.columns else 0
 upsell_rate = (addon_orders / total_orders * 100) if total_orders else 0
+late_orders_df = reports.get("late_orders", pd.DataFrame())
+late_risk_df = reports.get("late_risk_orders", pd.DataFrame())
+late_order_count = int(late_orders_df["رقم الطلب الموحد"].nunique()) if not late_orders_df.empty and "رقم الطلب الموحد" in late_orders_df.columns else 0
+late_risk_count = int(late_risk_df["رقم الطلب الموحد"].nunique()) if not late_risk_df.empty and "رقم الطلب الموحد" in late_risk_df.columns else 0
+late_critical_count = int(late_orders_df[late_orders_df["حالة التأخير"].eq("تأخير حرج")]["رقم الطلب الموحد"].nunique()) if not late_orders_df.empty and "حالة التأخير" in late_orders_df.columns else 0
+
 
 # Smart insights
 top_branch = "-"
@@ -2507,6 +2804,7 @@ st.sidebar.write(f"الصفوف: **{format_int(total_rows)}**")
 st.sidebar.write(f"الطلبات: **{format_int(total_orders)}**")
 st.sidebar.write(f"المبيعات: **{format_money(total_sales)}**")
 st.sidebar.write(f"تحتاج متابعة: **{format_int(need_action_count)}**")
+st.sidebar.write(f"المتأخرة: **{format_int(late_order_count)}**")
 
 
 # =========================
@@ -2543,6 +2841,13 @@ if top_hour != "-":
     alerts.append(f"🔥 أعلى ساعة ضغط: {top_hour} بعدد {format_int(top_hour_count)} طلب.")
 if top_branch != "-":
     alerts.append(f"🏬 أعلى فرع طلبات: {top_branch} بعدد {format_int(top_branch_count)} طلب.")
+if late_critical_count > 0:
+    alerts.insert(0, f"🚨 يوجد {format_int(late_critical_count)} طلب بتأخير حرج يحتاج تدخل فوري.")
+elif late_order_count > 0:
+    alerts.insert(0, f"⏰ يوجد {format_int(late_order_count)} طلب متأخر ضمن الفلاتر الحالية.")
+elif late_risk_count > 0:
+    alerts.insert(0, f"⚠️ يوجد {format_int(late_risk_count)} طلب قريب من التأخير خلال الفترة المحددة.")
+
 if not alerts:
     st.markdown('<div class="good-box">✅ لا توجد تنبيهات حرجة ضمن الفلاتر الحالية.</div>', unsafe_allow_html=True)
 else:
@@ -2557,6 +2862,7 @@ else:
     tab_daily,
     tab_production,
     tab_action_center,
+    tab_late,
     tab_print,
     tab_prep,
     tab_sales,
@@ -2574,6 +2880,7 @@ else:
     "📍 Daily Ops",
     "🏭 Production Queue",
     "✅ Action Center",
+    "⏰ Late Orders",
     "🖨️ Print View",
     "🧾 Branch Prep",
     "💰 Sales",
@@ -2843,6 +3150,128 @@ with tab_action_center:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_action_center_v8",
         )
+
+
+with tab_late:
+    st.markdown('<div class="section-title">⏰ تقرير الطلبات المتأخرة</div>', unsafe_allow_html=True)
+
+    late_orders = reports.get("late_orders", pd.DataFrame())
+    late_risk_orders = reports.get("late_risk_orders", pd.DataFrame())
+    late_by_branch = reports.get("late_by_branch", pd.DataFrame())
+    late_by_hour = reports.get("late_by_hour", pd.DataFrame())
+    late_heat = reports.get("late_branch_hour_heatmap", pd.DataFrame())
+    late_reasons = reports.get("late_reasons", pd.DataFrame())
+    late_action = reports.get("late_action_center", pd.DataFrame())
+    late_summary = reports.get("late_summary", pd.DataFrame())
+
+    avg_late = 0
+    max_late = 0
+    late_value = 0
+    top_late_branch = "-"
+
+    if not late_orders.empty:
+        if "دقائق من موعد الاستلام" in late_orders.columns:
+            avg_late = float(pd.to_numeric(late_orders["دقائق من موعد الاستلام"], errors="coerce").mean())
+            max_late = float(pd.to_numeric(late_orders["دقائق من موعد الاستلام"], errors="coerce").max())
+        if "قيمة الطلب" in late_orders.columns:
+            late_value = float(pd.to_numeric(late_orders["قيمة الطلب"], errors="coerce").fillna(0).sum())
+        if "الفرع" in late_orders.columns:
+            tb_late = late_orders.groupby("الفرع")["رقم الطلب الموحد"].nunique().sort_values(ascending=False)
+            if len(tb_late):
+                top_late_branch = tb_late.index[0]
+
+    l1, l2, l3, l4, l5 = st.columns(5)
+    with l1:
+        render_kpi("الطلبات المتأخرة", format_int(late_order_count), "بعد السماحية المحددة", "#dc2626")
+    with l2:
+        render_kpi("قريبة من التأخير", format_int(late_risk_count), f"خلال {format_int(late_risk_window_minutes)} دقيقة", "#f59e0b")
+    with l3:
+        render_kpi("متوسط التأخير", format_minutes_ar(avg_late) if late_order_count else "-", "للطلبات المتأخرة", "#ea580c")
+    with l4:
+        render_kpi("أطول تأخير", format_minutes_ar(max_late) if late_order_count else "-", top_late_branch, "#7c3aed")
+    with l5:
+        render_kpi("قيمة المتأخرات", format_money(late_value), "بدون تكرار قيمة الطلب", "#0891b2")
+
+    st.markdown(
+        '<div class="note-box">يعتمد التقرير على مقارنة تاريخ ووقت الاستلام بالوقت الحالي بتوقيت السعودية. الطلب المتأخر = تجاوز موعد الاستلام بعد سماحية التأخير المحددة، والطلب القريب من التأخير = موعده خلال نافذة التنبيه.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if late_action.empty:
+        st.markdown('<div class="good-box">✅ لا توجد طلبات متأخرة أو قريبة من التأخير ضمن الفلاتر الحالية.</div>', unsafe_allow_html=True)
+    else:
+        c1, c2 = st.columns([1.05, 1])
+        with c1:
+            if not late_by_branch.empty:
+                fig = px.bar(
+                    late_by_branch.sort_values("عدد_الطلبات_المتأخرة"),
+                    x="عدد_الطلبات_المتأخرة",
+                    y="الفرع",
+                    orientation="h",
+                    text="عدد_الطلبات_المتأخرة",
+                    color="أقصى_تأخير_دقيقة",
+                    color_continuous_scale="Reds",
+                    title="الطلبات المتأخرة حسب الفرع",
+                )
+                fig.update_traces(textposition="outside")
+                st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
+            else:
+                st.info("لا توجد طلبات متأخرة حسب الفرع ضمن الفلاتر الحالية.")
+        with c2:
+            if not late_by_hour.empty:
+                fig = px.bar(
+                    late_by_hour,
+                    x="الساعة",
+                    y="عدد_الطلبات_المتأخرة",
+                    text="عدد_الطلبات_المتأخرة",
+                    color="متوسط_التأخير_دقيقة",
+                    color_continuous_scale="OrRd",
+                    title="الطلبات المتأخرة حسب الساعة",
+                )
+                fig.update_traces(textposition="outside")
+                st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
+            else:
+                st.info("لا توجد طلبات متأخرة حسب الساعة ضمن الفلاتر الحالية.")
+
+        if not late_heat.empty:
+            st.markdown('<div class="mini-title">Heatmap المتأخرات: الفرع × الساعة</div>', unsafe_allow_html=True)
+            fig = px.imshow(
+                late_heat,
+                text_auto=True,
+                aspect="auto",
+                title="Heatmap الطلبات المتأخرة",
+                color_continuous_scale="Reds",
+            )
+            fig = improve_heatmap_text_contrast(fig, late_heat)
+            fig.update_xaxes(side="top")
+            st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
+
+        c3, c4 = st.columns([1, 1])
+        with c3:
+            if not late_reasons.empty:
+                fig = px.bar(
+                    late_reasons.sort_values("عدد الطلبات"),
+                    x="عدد الطلبات",
+                    y="سبب المتابعة",
+                    orientation="h",
+                    text="عدد الطلبات",
+                    title="أسباب المتابعة في الطلبات المتأخرة / المعرضة للتأخير",
+                )
+                fig.update_traces(textposition="outside")
+                st.plotly_chart(fig_layout(fig, 420), use_container_width=True, config=chart_config())
+        with c4:
+            display_df(late_summary, 320, "ملخص المتأخرات")
+
+        st.markdown('<div class="mini-title">Action Center للطلبات المتأخرة والقريبة من التأخير</div>', unsafe_allow_html=True)
+        display_df(late_action, 520, "عرض كل الطلبات المتأخرة والقريبة من التأخير")
+
+        st.markdown('<div class="mini-title">الطلبات المتأخرة فقط</div>', unsafe_allow_html=True)
+        display_df(late_orders, 520, "عرض الطلبات المتأخرة فقط")
+
+        st.markdown('<div class="mini-title">طلبات قريبة من التأخير</div>', unsafe_allow_html=True)
+        display_df(late_risk_orders, 420, "عرض الطلبات القريبة من التأخير")
+
+
 
 
 with tab_print:
@@ -3476,6 +3905,9 @@ with tab_export:
         {"البند": "طلبات تحتاج متابعة", "القيمة": need_action_count},
         {"البند": "طلبات بإضافات", "القيمة": addon_orders},
         {"البند": "نسبة Upsell", "القيمة": round(upsell_rate, 1)},
+        {"البند": "الطلبات المتأخرة", "القيمة": late_order_count},
+        {"البند": "طلبات قريبة من التأخير", "القيمة": late_risk_count},
+        {"البند": "تأخير حرج", "القيمة": late_critical_count},
         {"البند": "أعلى فرع", "القيمة": top_branch},
         {"البند": "أعلى ساعة", "القيمة": top_hour},
     ]
@@ -3483,9 +3915,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.3.4",
+        "⬇️ تحميل Excel شامل كل التقارير V8.3.9",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_3_4.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_3_9.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
