@@ -1491,8 +1491,8 @@ st.markdown(
         <h1>{tr('📊 MAD Orders Dashboard V6 Full', '📊 MAD Orders Dashboard V6 Full')}</h1>
         <p>
             {tr(
-                '',
-                ''
+                'اهلا وسهلا ',
+                'welcome'
             )}
         </p>
     </div>
