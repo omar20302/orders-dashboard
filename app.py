@@ -24,7 +24,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.5 Full Language Fix"
+APP_VERSION = "V8.5.1 Language Fix Safe"
 
 
 # =========================
@@ -914,7 +914,7 @@ def prepare_data(raw_df):
 def safe_group_count(df, group_cols, value_col="رقم الطلب الموحد"):
     if df.empty:
         return pd.DataFrame()
-    return df.groupby(group_cols, dropna=False)[value_col].nunique().reset_index(name=ui("عدد الطلبات"))
+    return df.groupby(group_cols, dropna=False)[value_col].nunique().reset_index(name="عدد الطلبات")
 
 
 def build_reports(items, orders):
@@ -946,7 +946,7 @@ def build_reports(items, orders):
         hour_sales = hour_sales.merge(hour_order, on="الساعة", how="left").sort_values("ساعة رقم", na_position="last")
         reports["sales_by_hour"] = hour_sales.drop(columns=["ساعة رقم"], errors="ignore")
 
-        reports["status_report"] = active_orders.groupby(["الفرع", "الحالة"], dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
+        reports["status_report"] = active_orders.groupby(["الفرع", "الحالة"], dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
 
         heat = active_orders.pivot_table(index="الفرع", columns="الساعة", values="رقم الطلب الموحد", aggfunc="nunique", fill_value=0)
         hour_map = active_orders.drop_duplicates("الساعة").set_index("الساعة")["ساعة رقم"].to_dict()
@@ -1220,7 +1220,7 @@ def build_v83_advanced_reports(items, active_items, active_orders, reports):
             top_hour_range_adv = str(hour_tmp.index[0])
 
     advanced["advanced_executive_summary"] = pd.DataFrame([
-        {"المؤشر": ui("عدد الطلبات"), "القيمة": total_orders_adv, "ملاحظة": "Unique Order Id"},
+        {"المؤشر": "عدد الطلبات", "القيمة": total_orders_adv, "ملاحظة": "Unique Order Id"},
         {"المؤشر": "إجمالي المبيعات", "القيمة": total_sales_adv, "ملاحظة": "بدون تكرار قيمة الطلب"},
         {"المؤشر": "متوسط قيمة الطلب AOV", "القيمة": avg_order_adv, "ملاحظة": "Sales / Orders"},
         {"المؤشر": "نسبة الطلبات بإضافات", "القيمة": upsell_rate_adv, "ملاحظة": "%"},
@@ -1766,7 +1766,7 @@ UI_EN = {
     "عرض جدول Product Value": "Show Product Value table",
 
     # KPI / labels
-    ui("عدد الطلبات"): "Orders",
+    "عدد الطلبات": "Orders",
     "إجمالي المبيعات": "Total sales",
     "متوسط الطلب": "Average order",
     "تحتاج متابعة": "Need action",
