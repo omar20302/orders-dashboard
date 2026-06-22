@@ -15,11 +15,11 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V8.3.3 - Branch Auto Fix
+# MAD Orders Dashboard V8.3.4 - Fixed Branch Mapping
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.3.3 Branch Auto Fix - Aqiq"
+APP_VERSION = "V8.3.4 Fixed Branch Mapping"
 
 
 # =========================
@@ -349,20 +349,46 @@ def clean_quantity(value):
 
 
 def extract_branch(chef_name):
-    text = str(chef_name).strip()
+    """
+    Fixed branch mapping based on the Chef/Branch name coming from the source sheet.
+    Generic Madness And Desire branch is treated as العقيق.
+    """
+    raw = "" if pd.isna(chef_name) else str(chef_name)
+    text = normalize_arabic_digits(raw)
+    text = re.sub(r"\s+", " ", text).strip()
     low = text.lower()
-    branch_keywords = {
-        "قرطبة": ["قرطبة", "qurtuba", "qortoba", "qurtobah"],
-        "عريجاء": ["عريجاء", "عريجا", "العريجاء", "uraija", "uraijaa", "urejha"],
-        "الروضة": ["الروضة", "روضه", "rawdah", "rawda"],
-        "العارض": ["العارض", "arid", "al arid"],
-        "الورود": ["الورود", "worood", "al worood"],
-    }
-    for branch, keywords in branch_keywords.items():
-        if any(k.lower() in low for k in keywords):
-            return branch
-    return "بدون فرع محدد"
 
+    if "قرطبة" in text or "qurtuba" in low or "qortoba" in low or "qurtobah" in low:
+        return "قرطبة"
+
+    if "عريجاء" in text or "عريجا" in text or "العريجاء" in text or "uraija" in low or "uraijaa" in low or "urejha" in low:
+        return "عريجاء"
+
+    if "الروضة" in text or "روضه" in text or "روضة" in text or "rawdah" in low or "rawda" in low:
+        return "الروضة"
+
+    if "العارض" in text or "عارض" in text or "arid" in low or "al arid" in low or "alarid" in low:
+        return "العارض"
+
+    if "الورود" in text or "ورود" in text or "worood" in low or "al worood" in low or "alworood" in low:
+        return "الورود"
+
+    if "العقيق" in text or "عقيق" in text or "aqiq" in low or "al aqiq" in low or "alaqiq" in low:
+        return "العقيق"
+
+    # Generic Madness And Desire branch = Al Aqiq.
+    if (
+        "madness and desire" in low
+        or "madness" in low
+        or "مادنيس اند ديزاير" in text
+        or "مادنس اند ديزاير" in text
+        or "مادنيس" in text
+        or "مادنس" in text
+    ):
+        return "العقيق"
+
+    # Final fallback: route unknown/blank rows to العقيق so no undefined branch appears.
+    return "العقيق"
 
 def normalize_variety(value):
     text = str(value).strip()
@@ -736,9 +762,7 @@ def prepare_data(raw_df):
     df["رقم الطلب الظاهر"] = col_or_blank(df, cols["order_no"]).replace("", pd.NA).fillna(df["رقم الطلب الموحد"]).astype(str)
     df["العميل"] = col_or_blank(df, cols["customer"])
     df["الشيف / الفرع الأصلي"] = col_or_blank(df, cols["chef"])
-    df["الفرع قبل التصحيح"] = df["الشيف / الفرع الأصلي"].apply(extract_branch)
-    df["تم تصحيح الفرع تلقائيًا؟"] = df["الفرع قبل التصحيح"].astype(str).str.strip().eq("بدون فرع محدد")
-    df["الفرع"] = df["الفرع قبل التصحيح"].replace({"بدون فرع محدد": "العقيق"})
+    df["الفرع"] = df["الشيف / الفرع الأصلي"].apply(extract_branch)
     df["الحالة"] = col_or_blank(df, cols["status"]).replace("", "غير محدد")
     df["المنتج"] = col_or_blank(df, cols["product"]).apply(normalize_product_name)
     df["الحشوة"] = col_or_blank(df, cols["variety"]).apply(normalize_variety)
@@ -1011,8 +1035,6 @@ def build_reports(items, orders):
     if "تم تنظيف التاريخ/الوقت؟" in items.columns:
         add_issue("تم تنظيف التاريخ/الوقت تلقائيًا", items["تم تنظيف التاريخ/الوقت؟"].astype(bool), "منخفضة")
     add_issue("فرع غير محدد", items["الفرع"].eq("بدون فرع محدد"), "متوسطة")
-    if "تم تصحيح الفرع تلقائيًا؟" in items.columns:
-        add_issue("تم تصحيح الفرع تلقائيًا إلى العقيق", items["تم تصحيح الفرع تلقائيًا؟"].astype(bool), "منخفضة")
     add_issue("حالة طلب ناقصة", items["الحالة"].astype(str).str.strip().isin(["", "غير محدد"]), "متوسطة")
     add_issue("منتج بدون اسم", items["المنتج"].eq("بدون اسم منتج"), "عالية")
     add_issue("حشوة ناقصة للمنتجات", (~items["إضافة؟"]) & items["الحشوة"].astype(str).str.strip().eq(""), "منخفضة")
@@ -1027,7 +1049,7 @@ def build_reports(items, orders):
         items["قيمة الطلب رقم"].fillna(0).eq(0)
     ].copy()
     reports["data_quality_details"] = quality_detail[[c for c in [
-        "رقم الطلب الظاهر", "رقم الطلب الموحد", "الفرع قبل التصحيح", "الفرع", "تم تصحيح الفرع تلقائيًا؟", "الحالة",
+        "رقم الطلب الظاهر", "رقم الطلب الموحد", "الفرع", "الحالة",
         "تاريخ التوصيل قبل التنظيف", "وقت الاستلام قبل التنظيف",
         "تاريخ التوصيل الأصلي", "وقت الاستلام الأصلي", "تم تنظيف التاريخ/الوقت؟",
         "العميل", "المنتج", "قيمة الطلب رقم"
@@ -1747,7 +1769,7 @@ def build_production_queue(active_items):
         q["نطاق ساعة الاستلام"] = "بدون وقت"
 
     cols = [
-        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع قبل التصحيح", "الفرع", "تم تصحيح الفرع تلقائيًا؟", "رقم الطلب الظاهر", "رقم الطلب الموحد",
+        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
         "الحالة", "العميل", "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم",
         "أولوية", "سبب المتابعة", "رقم الجوال المستخرج", "واتساب", "الملاحظة",
         "تاريخ ووقت الاستلام", "ساعة رقم"
@@ -1814,7 +1836,7 @@ def build_action_center(active_items):
 
     cols = [
         "الأولوية", "حالة المتابعة", "نوع الإجراء", "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض",
-        "الفرع قبل التصحيح", "الفرع", "تم تصحيح الفرع تلقائيًا؟", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
+        "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
         "المنتج", "الحشوة", "الكمية رقم", "رقم الجوال المستخرج", "واتساب",
         "ملاحظة داخلية", "الملاحظة", "تاريخ ووقت الاستلام", "ساعة رقم"
     ]
@@ -3073,9 +3095,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.3.3",
+        "⬇️ تحميل Excel شامل كل التقارير V8.3.4",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_3_3.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_3_4.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
