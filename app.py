@@ -21,7 +21,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.3.5 Auto Refresh + Sidebar UX Fix"
+APP_VERSION = "V8.3.6 Safe Sidebar Outside Click"
 
 
 # =========================
@@ -2104,9 +2104,10 @@ def render_print_cards(print_df, limit=120):
 
 
 
+
 # =========================
-# V8.3.5 Close Sidebar On Outside Click
-# إخفاء السايد بار عند الضغط خارجها، خصوصاً على الجوال
+# V8.3.6 Safe Close Sidebar On Outside Click
+# إخفاء السايد بار عند الضغط خارجها بدون لمس زر Share أو أي زر في الهيدر
 # =========================
 components.html(
     """
@@ -2114,46 +2115,102 @@ components.html(
     (function() {
         const doc = window.parent.document;
 
-        if (window.parent.__madSidebarOutsideClickInstalled) {
+        if (window.parent.__madSafeSidebarOutsideClickInstalled) {
             return;
         }
-        window.parent.__madSidebarOutsideClickInstalled = true;
+        window.parent.__madSafeSidebarOutsideClickInstalled = true;
 
-        function findCloseButton() {
-            const selectors = [
-                'button[aria-label="Close sidebar"]',
-                'button[title="Close sidebar"]',
-                'button[kind="header"]',
-                '[data-testid="stSidebarCollapseButton"] button',
-                '[data-testid="collapsedControl"] button'
-            ];
-
-            for (const sel of selectors) {
-                const btn = doc.querySelector(sel);
-                if (btn) return btn;
-            }
-
-            const buttons = Array.from(doc.querySelectorAll('button'));
-            return buttons.find(b => {
-                const label = (b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').toLowerCase();
-                return label.includes('close sidebar') || label.includes('hide sidebar') || label.includes('collapse');
-            });
+        function isSidebarOpen() {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            return sidebar && sidebar.getAttribute('aria-expanded') === 'true';
         }
 
-        doc.addEventListener('click', function(event) {
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"][aria-expanded="true"]');
+        function getSidebar() {
+            return doc.querySelector('section[data-testid="stSidebar"][aria-expanded="true"]');
+        }
+
+        function isTopToolbar(target) {
+            return Boolean(
+                target.closest('header') ||
+                target.closest('[data-testid="stToolbar"]') ||
+                target.closest('[data-testid="stDecoration"]') ||
+                target.closest('[data-testid="stHeader"]') ||
+                target.closest('[data-testid="stActionButton"]')
+            );
+        }
+
+        function findRealSidebarCloseButton() {
+            const sidebar = getSidebar();
+            if (!sidebar) return null;
+
+            // Search only inside/near sidebar. Do NOT search generic header buttons.
+            const candidates = [
+                ...Array.from(sidebar.querySelectorAll('button')),
+                ...Array.from(doc.querySelectorAll('[data-testid="stSidebarCollapseButton"] button')),
+                ...Array.from(doc.querySelectorAll('button[aria-label="Close sidebar"]')),
+                ...Array.from(doc.querySelectorAll('button[title="Close sidebar"]'))
+            ];
+
+            for (const btn of candidates) {
+                const label = (
+                    btn.getAttribute('aria-label') ||
+                    btn.getAttribute('title') ||
+                    btn.innerText ||
+                    ''
+                ).toLowerCase();
+
+                // Only exact sidebar-close/collapse controls.
+                if (
+                    label.includes('close sidebar') ||
+                    label.includes('collapse sidebar') ||
+                    label.includes('hide sidebar')
+                ) {
+                    return btn;
+                }
+            }
+
+            return null;
+        }
+
+        function closeSidebarSafely() {
+            const closeButton = findRealSidebarCloseButton();
+
+            if (closeButton) {
+                closeButton.click();
+                return;
+            }
+
+            // Safe fallback: Escape key. This will not click Share/Invite.
+            doc.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Escape',
+                code: 'Escape',
+                keyCode: 27,
+                which: 27,
+                bubbles: true
+            }));
+        }
+
+        doc.addEventListener('pointerdown', function(event) {
+            const sidebar = getSidebar();
             if (!sidebar) return;
 
             const target = event.target;
+
+            // Do nothing if click is inside sidebar.
             if (sidebar.contains(target)) return;
 
-            const isSidebarControl = target.closest('[data-testid="collapsedControl"]') || target.closest('[data-testid="stSidebarCollapseButton"]');
-            if (isSidebarControl) return;
+            // Do nothing if click is in Streamlit top toolbar/header (Share, menu, GitHub, etc.).
+            if (isTopToolbar(target)) return;
 
-            const closeButton = findCloseButton();
-            if (closeButton) {
-                closeButton.click();
+            // Do nothing if user clicked the sidebar toggle itself.
+            if (
+                target.closest('[data-testid="collapsedControl"]') ||
+                target.closest('[data-testid="stSidebarCollapseButton"]')
+            ) {
+                return;
             }
+
+            closeSidebarSafely();
         }, true);
     })();
     </script>
@@ -2161,6 +2218,7 @@ components.html(
     height=0,
     width=0,
 )
+
 
 
 # =========================
