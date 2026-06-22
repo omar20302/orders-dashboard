@@ -22,7 +22,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.4.0 Late Orders Courier Time"
+APP_VERSION = "V8.4.1 Courier Timezone Fix"
 
 
 # =========================
@@ -2102,6 +2102,44 @@ def now_riyadh_naive():
         return datetime.now()
 
 
+
+def normalize_datetime_series_to_naive(series):
+    """
+    يحول أي عمود تاريخ/وقت إلى datetime بدون timezone.
+    الهدف: منع خطأ طرح وقت فيه timezone من وقت بدون timezone.
+    لو القيمة فيها timezone نحولها لتوقيت السعودية ثم نزيل timezone.
+    لو القيمة بدون timezone نتركها كما هي.
+    """
+    def _one(value):
+        if pd.isna(value):
+            return pd.NaT
+        try:
+            ts = pd.Timestamp(value)
+        except Exception:
+            ts = pd.to_datetime(value, errors="coerce")
+
+        if pd.isna(ts):
+            return pd.NaT
+
+        try:
+            if getattr(ts, "tzinfo", None) is not None:
+                try:
+                    ts = ts.tz_convert("Asia/Riyadh")
+                except Exception:
+                    pass
+                try:
+                    ts = ts.tz_localize(None)
+                except Exception:
+                    ts = pd.Timestamp(ts.replace(tzinfo=None))
+        except Exception:
+            pass
+
+        return ts
+
+    return pd.to_datetime(series.apply(_one), errors="coerce")
+
+
+
 def format_minutes_ar(minutes):
     try:
         minutes = int(round(float(minutes)))
@@ -2173,7 +2211,7 @@ def build_late_orders_reports(active_items, active_orders, grace_minutes=10, ris
 
     now_dt = current_time or now_riyadh_naive()
     orders = active_orders.copy()
-    orders["تاريخ ووقت الاستلام"] = pd.to_datetime(orders["تاريخ ووقت الاستلام"], errors="coerce")
+    orders["تاريخ ووقت الاستلام"] = normalize_datetime_series_to_naive(orders["تاريخ ووقت الاستلام"])
     orders = orders[orders["تاريخ ووقت الاستلام"].notna()].copy()
 
     if orders.empty:
@@ -2188,7 +2226,7 @@ def build_late_orders_reports(active_items, active_orders, grace_minutes=10, ris
         return empty_pack
 
     if "وقت التسليم للمندوب" in orders.columns:
-        orders["وقت التسليم للمندوب"] = pd.to_datetime(orders["وقت التسليم للمندوب"], errors="coerce")
+        orders["وقت التسليم للمندوب"] = normalize_datetime_series_to_naive(orders["وقت التسليم للمندوب"])
     else:
         orders["وقت التسليم للمندوب"] = pd.NaT
     orders["تم التسليم للمندوب؟"] = orders["وقت التسليم للمندوب"].notna()
@@ -2268,7 +2306,7 @@ def build_late_orders_reports(active_items, active_orders, grace_minutes=10, ris
     orders["مدة التأخير"] = orders["دقائق التأخير المعتمدة"].apply(lambda x: format_minutes_ar(x) if pd.notna(x) and float(x) > 0 else "-")
     orders["باقي على الموعد"] = orders["دقائق حتى الاستلام"].apply(lambda x: format_minutes_ar(x) if pd.notna(x) and float(x) >= 0 else "-")
     orders["وقت الاستلام"] = orders["تاريخ ووقت الاستلام"].dt.strftime("%Y-%m-%d %I:%M %p")
-    orders["وقت التسليم للمندوب عرض"] = pd.to_datetime(orders["وقت التسليم للمندوب"], errors="coerce").dt.strftime("%Y-%m-%d %I:%M %p")
+    orders["وقت التسليم للمندوب عرض"] = normalize_datetime_series_to_naive(orders["وقت التسليم للمندوب"]).dt.strftime("%Y-%m-%d %I:%M %p")
     orders["وقت التسليم للمندوب عرض"] = orders["وقت التسليم للمندوب عرض"].replace("NaT", "").fillna("")
 
     focus = orders[orders["حالة التأخير"].isin(["تأخير حرج", "تأخير متوسط", "تأخير بسيط", "قريب يتأخر"])].copy()
