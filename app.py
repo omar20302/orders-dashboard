@@ -24,7 +24,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.5.2 Plotly Column Fix"
+APP_VERSION = "V8.5.3 Safe Charts Fix"
 
 
 # =========================
@@ -1891,6 +1891,68 @@ def px_labels(mapping=None):
     return base_mapping
 
 
+
+def ensure_chart_column(df, preferred, fallbacks=None):
+    """Return an existing dataframe column. Never use translated labels as data bindings."""
+    fallbacks = fallbacks or []
+    if df is None or getattr(df, "empty", True):
+        return None
+
+    reverse_map = {}
+    try:
+        reverse_map.update({v: k for k, v in UI_EN.items()})
+        reverse_map.update({v: k for k, v in VALUE_EN.items()})
+    except Exception:
+        pass
+
+    candidates = []
+    for c in [preferred] + list(fallbacks):
+        if c is None:
+            continue
+        candidates.append(c)
+        candidates.append(str(c))
+        if str(c) in reverse_map:
+            candidates.append(reverse_map[str(c)])
+
+    for c in candidates:
+        if c in df.columns:
+            return c
+
+    return None
+
+
+def make_safe_bar(df, x_col, y_col, *, title="", text_col=None, color_col=None, fallback_x=None, fallback_y=None, **kwargs):
+    """Safe bar chart wrapper used only for fragile dynamic charts."""
+    if df is None or df.empty:
+        return go.Figure()
+
+    x_real = ensure_chart_column(df, x_col, fallback_x or [])
+    y_real = ensure_chart_column(df, y_col, fallback_y or [])
+    text_real = ensure_chart_column(df, text_col, []) if text_col is not None else None
+    color_real = ensure_chart_column(df, color_col, []) if color_col is not None else None
+
+    if x_real is None:
+        x_real = df.columns[0]
+    if y_real is None:
+        numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+        y_real = numeric_cols[0] if numeric_cols else (df.columns[1] if len(df.columns) > 1 else df.columns[0])
+
+    chart_kwargs = dict(kwargs)
+    if text_real is not None:
+        chart_kwargs["text"] = text_real
+    if color_real is not None:
+        chart_kwargs["color"] = color_real
+
+    return px.bar(
+        df,
+        x=x_real,
+        y=y_real,
+        title=ui(title) if title else None,
+        labels=px_labels(),
+        **chart_kwargs
+    )
+
+
 def translate_fig_for_language(fig):
     if not is_english_ui():
         return fig
@@ -2847,11 +2909,11 @@ with tab_production:
                 by_hour_q = queue_view.groupby(by_hour_col, dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
                 by_hour_q["_sort"] = by_hour_q[by_hour_col].apply(hour_range_sort_value)
                 by_hour_q = by_hour_q.sort_values("_sort").drop(columns=["_sort"])
-                fig = px.bar(by_hour_q, x=by_hour_col, y="عدد الطلبات", text="عدد الطلبات", title="ضغط التجهيز حسب نطاق الساعة")
+                fig = make_safe_bar(by_hour_q, by_hour_col, "عدد الطلبات", text_col="عدد الطلبات", title="ضغط التجهيز حسب نطاق الساعة", fallback_x=["نطاق ساعة الاستلام", "الساعة"], fallback_y=["عدد الطلبات"])
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
             with qc2:
                 by_branch_q = queue_view.groupby("الفرع", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
-                fig = px.bar(by_branch_q, x="الفرع", y="عدد الطلبات", text="عدد الطلبات", title="طلبات التجهيز حسب الفرع")
+                fig = make_safe_bar(by_branch_q, "الفرع", "عدد الطلبات", text_col="عدد الطلبات", title="طلبات التجهيز حسب الفرع", fallback_x=["الفرع"], fallback_y=["عدد الطلبات"])
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
 
         st.markdown('<div class="mini-title">جدول التجهيز</div>', unsafe_allow_html=True)
