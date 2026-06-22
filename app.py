@@ -21,7 +21,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.3.7 Today Date Default"
+APP_VERSION = "V8.3.8 Heatmap Text Fix"
 
 
 # =========================
@@ -291,6 +291,15 @@ st.markdown(
     .note-box * {
         color: inherit !important;
         opacity: 1 !important;
+    }
+
+    
+    /* V8.3.8 Heatmap numbers readability */
+    .js-plotly-plot .plotly .heatmaplayer text {
+        font-weight: 900 !important;
+        paint-order: stroke !important;
+        stroke: rgba(15,23,42,.55) !important;
+        stroke-width: 1.5px !important;
     }
 
     </style>
@@ -1747,6 +1756,53 @@ def render_kpi(label, value, sub="", color="#22c55e"):
     )
 
 
+
+def improve_heatmap_text_contrast(fig, values_df, threshold_ratio=0.45):
+    """
+    يجعل أرقام الـ Heatmap واضحة:
+    الخلايا الغامقة = رقم أبيض
+    الخلايا الفاتحة = رقم غامق
+    """
+    try:
+        if values_df is None or values_df.empty:
+            return fig
+
+        numeric_df = values_df.apply(pd.to_numeric, errors="coerce").fillna(0)
+        max_value = float(numeric_df.to_numpy().max()) if numeric_df.size else 0.0
+        if max_value <= 0:
+            max_value = 1.0
+
+        annotations = []
+        for y_label in numeric_df.index:
+            for x_label in numeric_df.columns:
+                val = float(numeric_df.loc[y_label, x_label])
+                text_color = "#ffffff" if val >= max_value * threshold_ratio else "#0f172a"
+                text_value = str(int(val)) if val.is_integer() else f"{val:g}"
+                annotations.append(
+                    dict(
+                        x=x_label,
+                        y=y_label,
+                        text=text_value,
+                        showarrow=False,
+                        font=dict(color=text_color, size=12, family="Cairo, Arial"),
+                        xref="x",
+                        yref="y",
+                    )
+                )
+
+        for trace in fig.data:
+            if getattr(trace, "type", "") == "heatmap":
+                trace.text = None
+                trace.texttemplate = None
+                trace.hovertemplate = "%{y}<br>%{x}<br>العدد: %{z}<extra></extra>"
+
+        fig.update_layout(annotations=annotations)
+    except Exception:
+        return fig
+    return fig
+
+
+
 def fig_layout(fig, height=420):
     fig.update_layout(
         height=height,
@@ -2557,6 +2613,7 @@ with tab_daily:
     heat = reports.get("branch_hour_heatmap", pd.DataFrame())
     if not heat.empty:
         fig = px.imshow(heat, text_auto=True, aspect="auto", title="Heatmap الفرع × الساعة", color_continuous_scale="YlGnBu")
+        fig = improve_heatmap_text_contrast(fig, heat)
         fig.update_xaxes(side="top")
         st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
 
@@ -3024,6 +3081,7 @@ with tab_varieties:
             title="كمية أعلى الحشوات حسب الفروع",
             color_continuous_scale="YlGnBu",
         )
+        fig = improve_heatmap_text_contrast(fig, heat)
         fig.update_xaxes(side="top", tickangle=-20, tickfont=dict(size=12))
         fig.update_yaxes(tickfont=dict(size=12))
         fig.update_layout(margin=dict(l=170, r=35, t=105, b=80))
@@ -3058,6 +3116,7 @@ with tab_varieties:
             title="توزيع الحشوات حسب المنتجات",
             color_continuous_scale="Teal",
         )
+        fig = improve_heatmap_text_contrast(fig, pv_heat)
         fig.update_xaxes(side="top", tickangle=-20, tickfont=dict(size=12))
         fig.update_yaxes(tickfont=dict(size=12))
         fig.update_layout(margin=dict(l=260, r=35, t=110, b=95))
