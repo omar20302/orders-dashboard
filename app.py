@@ -6,10 +6,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
-try:
-    from streamlit_autorefresh import st_autorefresh
-except Exception:
-    st_autorefresh = None
+import streamlit.components.v1 as components
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -24,7 +21,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.5.4 Global Chart Guard"
+APP_VERSION = "V8.3.5 Auto Refresh + Sidebar UX Fix"
 
 
 # =========================
@@ -304,12 +301,123 @@ st.markdown(
 
 
 # =========================
-# V8.4.1 Sidebar Collapse Fix
-# يمنع ظهور نص القائمة الجانبية بشكل عمودي عند إخفائها
+# V8.3.5 Sidebar Readability + Collapse Fix
+# تعديل شكل السايد بار فقط بدون تغيير أي تقرير
 # =========================
 st.markdown(
     """
     <style>
+    /* Clear dark sidebar */
+    section[data-testid="stSidebar"][aria-expanded="true"] {
+        background: linear-gradient(180deg, #0f172a 0%, #111827 100%) !important;
+        border-right: 1px solid rgba(148, 163, 184, .24) !important;
+        box-shadow: 8px 0 28px rgba(0, 0, 0, .30) !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] > div {
+        background: transparent !important;
+    }
+
+    /* Readable sidebar labels and text */
+    section[data-testid="stSidebar"][aria-expanded="true"] h1,
+    section[data-testid="stSidebar"][aria-expanded="true"] h2,
+    section[data-testid="stSidebar"][aria-expanded="true"] h3,
+    section[data-testid="stSidebar"][aria-expanded="true"] h4,
+    section[data-testid="stSidebar"][aria-expanded="true"] p,
+    section[data-testid="stSidebar"][aria-expanded="true"] label,
+    section[data-testid="stSidebar"][aria-expanded="true"] span,
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-testid="stMarkdownContainer"],
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-testid="stWidgetLabel"],
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-testid="stWidgetLabel"] p {
+        color: #f8fafc !important;
+        opacity: 1 !important;
+        font-weight: 700 !important;
+        text-shadow: none !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] small,
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-testid="stCaptionContainer"] {
+        color: #cbd5e1 !important;
+        opacity: 1 !important;
+    }
+
+    /* Inputs are white with dark text for maximum readability */
+    section[data-testid="stSidebar"][aria-expanded="true"] input,
+    section[data-testid="stSidebar"][aria-expanded="true"] textarea {
+        background: #ffffff !important;
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        border: 1px solid rgba(15, 23, 42, .18) !important;
+        border-radius: 10px !important;
+        font-weight: 700 !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] input::placeholder,
+    section[data-testid="stSidebar"][aria-expanded="true"] textarea::placeholder {
+        color: #64748b !important;
+        opacity: 1 !important;
+        -webkit-text-fill-color: #64748b !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-baseweb="select"] > div {
+        background: #ffffff !important;
+        color: #111827 !important;
+        border: 1px solid rgba(15, 23, 42, .18) !important;
+        border-radius: 10px !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-baseweb="select"] span,
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-baseweb="select"] input,
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-baseweb="select"] div {
+        color: #111827 !important;
+        -webkit-text-fill-color: #111827 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Multiselect tags */
+    section[data-testid="stSidebar"][aria-expanded="true"] span[data-baseweb="tag"] {
+        background: #2563eb !important;
+        color: #ffffff !important;
+        font-weight: 800 !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] span[data-baseweb="tag"] * {
+        color: #ffffff !important;
+        opacity: 1 !important;
+    }
+
+    /* Buttons */
+    section[data-testid="stSidebar"][aria-expanded="true"] .stButton button {
+        background: rgba(30, 41, 59, .95) !important;
+        color: #f8fafc !important;
+        border: 1px solid rgba(248, 250, 252, .35) !important;
+        border-radius: 12px !important;
+        font-weight: 800 !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] .stButton button:hover {
+        background: rgba(37, 99, 235, .95) !important;
+        border-color: rgba(191, 219, 254, .75) !important;
+    }
+
+    /* Alerts in sidebar */
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-testid="stAlert"] {
+        background: rgba(15, 23, 42, .82) !important;
+        border: 1px solid rgba(148, 163, 184, .35) !important;
+        border-radius: 12px !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] div[data-testid="stAlert"] * {
+        color: #f8fafc !important;
+        opacity: 1 !important;
+        font-weight: 700 !important;
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] hr {
+        border-color: rgba(203, 213, 225, .35) !important;
+    }
+
+    /* Fully hide sidebar when collapsed */
     section[data-testid="stSidebar"][aria-expanded="false"] {
         min-width: 0 !important;
         width: 0 !important;
@@ -320,35 +428,16 @@ st.markdown(
         border: 0 !important;
     }
 
-    section[data-testid="stSidebar"][aria-expanded="false"] > div {
+    section[data-testid="stSidebar"][aria-expanded="false"] > div,
+    section[data-testid="stSidebar"][aria-expanded="false"] * {
         display: none !important;
         visibility: hidden !important;
-        width: 0 !important;
-        min-width: 0 !important;
-        max-width: 0 !important;
-        overflow: hidden !important;
-    }
-
-    section[data-testid="stSidebar"][aria-expanded="true"] {
-        overflow: visible !important;
     }
 
     @media (max-width: 768px) {
         section[data-testid="stSidebar"][aria-expanded="true"] {
             min-width: 285px !important;
             max-width: 92vw !important;
-        }
-
-        section[data-testid="stSidebar"][aria-expanded="false"] {
-            min-width: 0 !important;
-            width: 0 !important;
-            max-width: 0 !important;
-            overflow: hidden !important;
-        }
-
-        section[data-testid="stSidebar"][aria-expanded="false"] * {
-            display: none !important;
-            visibility: hidden !important;
         }
     }
     </style>
@@ -1539,7 +1628,6 @@ def wrap_label(value, width=18):
 
 def make_readable_fig(fig, height=480, showlegend=True, legend_orientation="h"):
     """Global readability styling for dark dashboard charts."""
-    fig = translate_fig_for_language(fig)
     fig.update_layout(
         height=height,
         font=dict(size=15, color="#f8fafc", family="Arial"),
@@ -1646,581 +1734,6 @@ def hour_range_sort_value(label):
 
 
 
-
-# =========================
-# V8.5 Language Display Helpers
-# يحول واجهة العرض والرسوم والجداول بدون تغيير أسماء الأعمدة الأصلية أو منطق التقارير
-# =========================
-
-UI_EN = {
-    # General
-    "عرض الجدول": "Show table",
-    "لا توجد بيانات لهذا التقرير ضمن الفلاتر الحالية.": "No data for this report with the current filters.",
-    "صف": "rows",
-    "عمود": "columns",
-    "الكل": "All",
-    "عالية": "High",
-    "عادية": "Normal",
-    "متوسطة": "Medium",
-    "منخفضة": "Low",
-    "منخفضة": "Low",
-    "عالية": "High",
-    "منخفض": "Low",
-    "جيد": "Good",
-    "فرصة عالية": "High opportunity",
-    "بدون وقت": "No time",
-    "بدون فرع محدد": "Unknown branch",
-
-    # Common columns
-    "رقم الطلب": "Order No.",
-    "رقم الطلب الظاهر": "Order No.",
-    "رقم الطلب الموحد": "Order ID",
-    "العميل": "Customer",
-    "الفرع": "Branch",
-    "الحالة": "Status",
-    "تاريخ التحليل": "Analysis date",
-    "تاريخ التوصيل الأصلي": "Delivery date",
-    "وقت الاستلام": "Pickup time",
-    "وقت الاستلام الأصلي": "Pickup time",
-    "الساعة": "Hour",
-    "ساعة رقم": "Hour no.",
-    "قيمة الطلب": "Order value",
-    "عدد الأصناف": "Items count",
-    "عدد المنتجات": "Products count",
-    "عدد الإضافات": "Add-ons count",
-    "يحتاج متابعة": "Need action",
-    "يحتاج متابعة؟": "Need action?",
-    "إضافة؟": "Add-on?",
-    "فيه إضافات": "Has add-ons",
-    "ملغي": "Cancelled",
-    "ملغي؟": "Cancelled?",
-    "المنتج": "Product",
-    "الحشوة": "Filling",
-    "الكمية": "Quantity",
-    "الكمية رقم": "Quantity",
-    "المبيعات": "Sales",
-    "المبيعات_منتجات": "Product sales",
-    "متوسط_الطلب": "Average order",
-    "عدد_الطلبات": "Orders",
-    "طلبات": "Orders",
-    "الطلبات": "Orders",
-    "عدد الحالات": "Cases",
-    "سبب المتابعة": "Action reason",
-    "الملاحظة": "Note",
-    "رقم الجوال المستخرج": "Extracted mobile",
-    "الحملة": "Campaign",
-    "تصنيف الإضافة": "Add-on category",
-    "نوع الصنف": "Item type",
-    "أولوية": "Priority",
-    "الأولوية": "Priority",
-    "حالة المتابعة": "Follow-up status",
-    "نوع الإجراء": "Action type",
-    "نطاق ساعة الاستلام": "Pickup hour range",
-    "وقت عرض": "Display time",
-    "تاريخ عرض": "Display date",
-    "إجمالي المنتج رقم": "Item total",
-    "سعر الحبة رقم": "Unit price",
-    "سعر الحشوة رقم": "Filling price",
-    "الخصم": "Discount",
-    "البند": "Item",
-    "القيمة": "Value",
-    "المؤشر": "Metric",
-    "ملاحظة": "Note",
-    "المشكلة": "Issue",
-    "عدد الصفوف": "Rows",
-    "الأهمية": "Severity",
-
-    # Chart / section titles
-    "ضغط الطلبات حسب الفرع": "Orders pressure by branch",
-    "ضغط الطلبات حسب الساعة": "Orders pressure by hour",
-    "Heatmap الفرع × الساعة": "Branch × Hour Heatmap",
-    "أقرب جدول تشغيل ضمن الفلاتر": "Nearest operating schedule within filters",
-    "ضغط التجهيز حسب نطاق الساعة": "Preparation pressure by hour range",
-    "طلبات التجهيز حسب الفرع": "Preparation orders by branch",
-    "أسباب الإجراءات": "Action reasons",
-    "المبيعات حسب الفرع": "Sales by branch",
-    "المبيعات حسب الساعة": "Sales by hour",
-    "الحالات حسب الفرع": "Statuses by branch",
-    "حالات الطلبات حسب الفرع": "Order statuses by branch",
-    "أعلى المنتجات حسب الكمية": "Top products by quantity",
-    "المنتجات حسب الفرع": "Products by branch",
-    "أعلى الحشوات حسب الكمية": "Top fillings by quantity",
-    "الحشوات حسب الفرع": "Fillings by branch",
-    "الحشوات حسب المنتج": "Fillings by product",
-    "الحشوات حسب الساعة": "Fillings by hour",
-    "الإضافات حسب التصنيف": "Add-ons by category",
-    "الإضافات حسب الفرع": "Add-ons by branch",
-    "المنتجات حسب الحملة": "Products by campaign",
-    "أفضل منتجات الفرع": "Top branch products",
-    "ضغط الفرع حسب الساعة": "Branch pressure by hour",
-    "المنتج حسب الفرع": "Product by branch",
-    "حشوات المنتج": "Product fillings",
-    "كل طلبات المنتج": "All product orders",
-    "مشاكل جودة البيانات": "Data quality issues",
-    "تفاصيل الصفوف التي تحتاج تنظيف": "Rows that need cleanup",
-    "ترتيب الفروع حسب المبيعات": "Branch ranking by sales",
-    "خريطة قيمة المنتجات: كمية × مبيعات لكل طلب": "Product value map: quantity × sales per order",
-    "أعلى المنتجات بالقيمة": "Top products by value",
-    "عرض Executive Summary": "Show Executive Summary",
-    "عرض جدول Branch Ranking": "Show Branch Ranking table",
-    "عرض جدول Product Value": "Show Product Value table",
-
-    # KPI / labels
-    "عدد الطلبات": "Orders",
-    "إجمالي المبيعات": "Total sales",
-    "متوسط الطلب": "Average order",
-    "تحتاج متابعة": "Need action",
-    "بدون تكرار قيمة الطلب": "Order value without duplication",
-    "صورة / تواصل / كتابة": "Photo / Contact / Writing",
-    "طلب بإضافات": "orders with add-ons",
-    "طلبات الفرع": "Branch orders",
-    "مبيعات الفرع": "Branch sales",
-    "طلبات المنتج": "Product orders",
-    "كمية المنتج": "Product quantity",
-    "مبيعات المنتج": "Product sales",
-    "طلبات بإضافات": "Orders with add-ons",
-    "أفضل فرع بالمبيعات": "Top branch by sales",
-    "أعلى نطاق ساعة": "Peak hour range",
-
-    # Filters
-    "فرع التجهيز": "Preparation branch",
-    "نطاق ساعة الاستلام": "Pickup hour range",
-    "الحالة": "Status",
-    "الأولوية": "Priority",
-    "إظهار الإضافات": "Show add-ons",
-    "فقط ما يحتاج متابعة": "Only need action",
-    "بحث داخل التجهيز": "Search preparation queue",
-    "رقم طلب / منتج / عميل / جوال": "Order / product / customer / mobile",
-    "اختار الفرع": "Choose branch",
-    "اختار فرع للتحليل العميق": "Choose branch for deep analysis",
-    "اختار المنتج": "Choose product",
-}
-
-VALUE_EN = {
-    # Branches
-    "العقيق": "Al Aqiq",
-    "العارض": "Al Arid",
-    "عريجاء": "Uraija",
-    "الروضة": "Rawdah",
-    "قرطبة": "Qurtuba",
-    "الورود": "Al Worood",
-    "بدون فرع محدد": "Unknown branch",
-
-    # Common values
-    "الكل": "All",
-    "بدون وقت": "No time",
-    "ملغي": "Cancelled",
-    "ملغاة": "Cancelled",
-    "غير محدد": "Undefined",
-    "منتج": "Product",
-    "إضافة": "Add-on",
-    "عالية": "High",
-    "عادية": "Normal",
-    "متوسطة": "Medium",
-    "منخفضة": "Low",
-    "صورة / Photo": "Photo",
-    "كتابة / Writing": "Writing",
-    "تواصل / Contact": "Contact",
-    "مشكلة / Problem": "Problem",
-    "تعديل تصميم": "Design change",
-}
-
-def is_english_ui():
-    return globals().get("IS_AR", True) is False
-
-def ui(text):
-    text = "" if text is None else str(text)
-    if not is_english_ui():
-        return text
-    return UI_EN.get(text, VALUE_EN.get(text, text))
-
-def translate_value(value):
-    if not is_english_ui():
-        return value
-    if pd.isna(value):
-        return value
-    text = str(value)
-    if text in VALUE_EN:
-        return VALUE_EN[text]
-    if text in UI_EN:
-        return UI_EN[text]
-
-    # Convert Arabic hour labels مثل 5-6 م / 4-5 ص
-    text2 = text
-    text2 = re.sub(r"\s*ص\b", " AM", text2)
-    text2 = re.sub(r"\s*م\b", " PM", text2)
-    text2 = text2.replace("بدون وقت", "No time")
-    return text2
-
-def translate_df_for_display(df):
-    if df is None or df.empty or not is_english_ui():
-        return df
-    out = df.copy()
-    # Translate visible values only; report logic remains untouched.
-    for col in out.columns:
-        if out[col].dtype == object or str(out[col].dtype).startswith("string"):
-            out[col] = out[col].map(translate_value)
-    out = out.rename(columns={c: ui(c) for c in out.columns})
-    return out
-
-
-def px_labels(mapping=None):
-    """Return Plotly labels without changing dataframe column names."""
-    base_mapping = {
-        "عدد الطلبات": ui("عدد الطلبات"),
-        "الفرع": ui("الفرع"),
-        "الحالة": ui("الحالة"),
-        "الساعة": ui("الساعة"),
-        "الحشوة": ui("الحشوة"),
-        "المنتج": ui("المنتج"),
-        "المبيعات": ui("المبيعات"),
-        "الكمية": ui("الكمية"),
-        "الكمية رقم": ui("الكمية رقم"),
-        "قيمة الطلب": ui("قيمة الطلب"),
-        "إجمالي المنتج رقم": ui("إجمالي المنتج رقم"),
-        "عدد_الطلبات": ui("عدد_الطلبات"),
-        "المبيعات_منتجات": ui("المبيعات_منتجات"),
-        "متوسط_الطلب": ui("متوسط_الطلب"),
-        "تصنيف الإضافة": ui("تصنيف الإضافة"),
-        "الحملة": ui("الحملة"),
-        "سبب المتابعة": ui("سبب المتابعة"),
-        "نطاق ساعة الاستلام": ui("نطاق ساعة الاستلام"),
-    }
-    if mapping:
-        base_mapping.update(mapping)
-    return base_mapping
-
-
-
-def ensure_chart_column(df, preferred, fallbacks=None):
-    """Return an existing dataframe column. Never use translated labels as data bindings."""
-    fallbacks = fallbacks or []
-    if df is None or getattr(df, "empty", True):
-        return None
-
-    reverse_map = {}
-    try:
-        reverse_map.update({v: k for k, v in UI_EN.items()})
-        reverse_map.update({v: k for k, v in VALUE_EN.items()})
-    except Exception:
-        pass
-
-    candidates = []
-    for c in [preferred] + list(fallbacks):
-        if c is None:
-            continue
-        candidates.append(c)
-        candidates.append(str(c))
-        if str(c) in reverse_map:
-            candidates.append(reverse_map[str(c)])
-
-    for c in candidates:
-        if c in df.columns:
-            return c
-
-    return None
-
-
-def make_safe_bar(df, x_col, y_col, *, title="", text_col=None, color_col=None, fallback_x=None, fallback_y=None, **kwargs):
-    """Safe bar chart wrapper used only for fragile dynamic charts."""
-    if df is None or df.empty:
-        return go.Figure()
-
-    x_real = ensure_chart_column(df, x_col, fallback_x or [])
-    y_real = ensure_chart_column(df, y_col, fallback_y or [])
-    text_real = ensure_chart_column(df, text_col, []) if text_col is not None else None
-    color_real = ensure_chart_column(df, color_col, []) if color_col is not None else None
-
-    if x_real is None:
-        x_real = df.columns[0]
-    if y_real is None:
-        numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-        y_real = numeric_cols[0] if numeric_cols else (df.columns[1] if len(df.columns) > 1 else df.columns[0])
-
-    chart_kwargs = dict(kwargs)
-    if text_real is not None:
-        chart_kwargs["text"] = text_real
-    if color_real is not None:
-        chart_kwargs["color"] = color_real
-
-    return px.bar(
-        df,
-        x=x_real,
-        y=y_real,
-        title=ui(title) if title else None,
-        labels=px_labels(),
-        **chart_kwargs
-    )
-
-
-
-# =========================
-# V8.5.4 Global Plotly Guard
-# يمنع انهيار التطبيق لو أي رسم Plotly استخدم عمود مترجم أو غير موجود
-# بدون تغيير منطق التقارير أو حذف أي وظيفة
-# =========================
-
-def _chart_reverse_label_map():
-    reverse = {}
-    try:
-        reverse.update({v: k for k, v in UI_EN.items()})
-        reverse.update({v: k for k, v in VALUE_EN.items()})
-    except Exception:
-        pass
-    return reverse
-
-
-def _resolve_plotly_column(data_frame, value, prefer_numeric=False):
-    """Resolve a Plotly column argument to a real dataframe column."""
-    if data_frame is None or not hasattr(data_frame, "columns"):
-        return value
-
-    cols = list(data_frame.columns)
-    if value is None:
-        return None
-
-    # Lists/dicts used by Plotly should stay as-is unless they are a list of column names.
-    if isinstance(value, (list, tuple)):
-        resolved = []
-        for item in value:
-            resolved_item = _resolve_plotly_column(data_frame, item, prefer_numeric=prefer_numeric)
-            if resolved_item is not None:
-                resolved.append(resolved_item)
-        return resolved or value
-
-    if not isinstance(value, str):
-        return value
-
-    if value in cols:
-        return value
-
-    reverse = _chart_reverse_label_map()
-    if value in reverse and reverse[value] in cols:
-        return reverse[value]
-
-    # Normalize very common English translated labels back to Arabic source columns
-    common_reverse = {
-        "Orders": "عدد الطلبات",
-        "Order count": "عدد الطلبات",
-        "Branch": "الفرع",
-        "Hour": "الساعة",
-        "Status": "الحالة",
-        "Sales": "المبيعات",
-        "Quantity": "الكمية",
-        "Product": "المنتج",
-        "Filling": "الحشوة",
-        "Campaign": "الحملة",
-        "Need action": "يحتاج متابعة",
-        "Pickup hour range": "نطاق ساعة الاستلام",
-    }
-    if value in common_reverse and common_reverse[value] in cols:
-        return common_reverse[value]
-
-    # Fallbacks by intent
-    numeric_cols = []
-    non_numeric_cols = []
-    try:
-        numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(data_frame[c])]
-        non_numeric_cols = [c for c in cols if c not in numeric_cols]
-    except Exception:
-        pass
-
-    if prefer_numeric and numeric_cols:
-        return numeric_cols[0]
-    if (not prefer_numeric) and non_numeric_cols:
-        return non_numeric_cols[0]
-    if cols:
-        return cols[0]
-    return value
-
-
-def _clean_plotly_kwargs(data_frame, kwargs):
-    """Resolve fragile dataframe column bindings before Plotly Express sees them."""
-    if data_frame is None or not hasattr(data_frame, "columns"):
-        return kwargs
-
-    out = dict(kwargs)
-
-    # Positional data bindings
-    for key in ["x", "y", "color", "text", "names", "values", "size", "hover_name", "facet_row", "facet_col", "animation_frame", "line_group", "symbol"]:
-        if key in out:
-            out[key] = _resolve_plotly_column(
-                data_frame,
-                out[key],
-                prefer_numeric=key in ["y", "values", "size"]
-            )
-
-    # hover_data can be list/dict
-    if "hover_data" in out:
-        hd = out["hover_data"]
-        if isinstance(hd, dict):
-            new_hd = {}
-            for k, v in hd.items():
-                rk = _resolve_plotly_column(data_frame, k)
-                if rk in data_frame.columns:
-                    new_hd[rk] = v
-            out["hover_data"] = new_hd if new_hd else None
-        elif isinstance(hd, (list, tuple)):
-            new_hd = []
-            for k in hd:
-                rk = _resolve_plotly_column(data_frame, k)
-                if rk in data_frame.columns:
-                    new_hd.append(rk)
-            out["hover_data"] = new_hd if new_hd else None
-
-    # Labels must keep original dataframe column keys, values can be translated.
-    if "labels" not in out or out["labels"] is None:
-        try:
-            out["labels"] = px_labels()
-        except Exception:
-            pass
-
-    return {k: v for k, v in out.items() if v is not None}
-
-
-def _install_plotly_guard():
-    if getattr(px, "_mad_guard_installed", False):
-        return
-
-    px._mad_original_bar = px.bar
-    px._mad_original_line = px.line
-    px._mad_original_scatter = px.scatter
-    px._mad_original_pie = px.pie
-
-    def guarded_bar(data_frame=None, *args, **kwargs):
-        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
-        try:
-            return px._mad_original_bar(data_frame, *args, **kwargs)
-        except ValueError:
-            # Last-resort fallback: pick safe x/y columns and keep the chart alive.
-            if data_frame is not None and hasattr(data_frame, "columns") and len(data_frame.columns) > 0:
-                safe_x = _resolve_plotly_column(data_frame, kwargs.get("x"), prefer_numeric=False)
-                safe_y = _resolve_plotly_column(data_frame, kwargs.get("y"), prefer_numeric=True)
-                basic_kwargs = {
-                    "x": safe_x,
-                    "y": safe_y,
-                    "title": kwargs.get("title"),
-                    "labels": kwargs.get("labels", px_labels() if "px_labels" in globals() else None),
-                }
-                return px._mad_original_bar(data_frame, **{k:v for k,v in basic_kwargs.items() if v is not None})
-            return go.Figure()
-
-    def guarded_line(data_frame=None, *args, **kwargs):
-        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
-        try:
-            return px._mad_original_line(data_frame, *args, **kwargs)
-        except ValueError:
-            if data_frame is not None and hasattr(data_frame, "columns") and len(data_frame.columns) > 0:
-                safe_x = _resolve_plotly_column(data_frame, kwargs.get("x"), prefer_numeric=False)
-                safe_y = _resolve_plotly_column(data_frame, kwargs.get("y"), prefer_numeric=True)
-                basic_kwargs = {
-                    "x": safe_x,
-                    "y": safe_y,
-                    "markers": kwargs.get("markers", True),
-                    "title": kwargs.get("title"),
-                    "labels": kwargs.get("labels", px_labels() if "px_labels" in globals() else None),
-                }
-                return px._mad_original_line(data_frame, **{k:v for k,v in basic_kwargs.items() if v is not None})
-            return go.Figure()
-
-    def guarded_scatter(data_frame=None, *args, **kwargs):
-        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
-        try:
-            return px._mad_original_scatter(data_frame, *args, **kwargs)
-        except ValueError:
-            if data_frame is not None and hasattr(data_frame, "columns") and len(data_frame.columns) > 0:
-                safe_x = _resolve_plotly_column(data_frame, kwargs.get("x"), prefer_numeric=True)
-                safe_y = _resolve_plotly_column(data_frame, kwargs.get("y"), prefer_numeric=True)
-                basic_kwargs = {
-                    "x": safe_x,
-                    "y": safe_y,
-                    "title": kwargs.get("title"),
-                    "labels": kwargs.get("labels", px_labels() if "px_labels" in globals() else None),
-                }
-                return px._mad_original_scatter(data_frame, **{k:v for k,v in basic_kwargs.items() if v is not None})
-            return go.Figure()
-
-    def guarded_pie(data_frame=None, *args, **kwargs):
-        kwargs = _clean_plotly_kwargs(data_frame, kwargs)
-        try:
-            return px._mad_original_pie(data_frame, *args, **kwargs)
-        except ValueError:
-            return go.Figure()
-
-    px.bar = guarded_bar
-    px.line = guarded_line
-    px.scatter = guarded_scatter
-    px.pie = guarded_pie
-    px._mad_guard_installed = True
-
-
-_install_plotly_guard()
-
-
-def translate_fig_for_language(fig):
-    if not is_english_ui():
-        return fig
-
-    def _map_array(arr):
-        if arr is None:
-            return arr
-        try:
-            return [translate_value(v) for v in list(arr)]
-        except Exception:
-            return arr
-
-    for trace in fig.data:
-        try:
-            if hasattr(trace, "x"):
-                trace.x = _map_array(trace.x)
-        except Exception:
-            pass
-        try:
-            if hasattr(trace, "y"):
-                trace.y = _map_array(trace.y)
-        except Exception:
-            pass
-        try:
-            if hasattr(trace, "labels"):
-                trace.labels = _map_array(trace.labels)
-        except Exception:
-            pass
-        try:
-            if hasattr(trace, "names"):
-                trace.names = _map_array(trace.names)
-        except Exception:
-            pass
-        try:
-            if getattr(trace, "name", None):
-                trace.name = ui(trace.name)
-        except Exception:
-            pass
-
-    try:
-        if fig.layout.title and fig.layout.title.text:
-            fig.update_layout(title_text=ui(fig.layout.title.text))
-    except Exception:
-        pass
-
-    for ax in ["xaxis", "yaxis", "coloraxis"]:
-        try:
-            axis_obj = getattr(fig.layout, ax, None)
-            if axis_obj and getattr(axis_obj, "title", None) and axis_obj.title.text:
-                axis_obj.title.text = ui(axis_obj.title.text)
-        except Exception:
-            pass
-
-    # Some colorbar titles live here
-    try:
-        if fig.layout.coloraxis and fig.layout.coloraxis.colorbar and fig.layout.coloraxis.colorbar.title.text:
-            fig.layout.coloraxis.colorbar.title.text = ui(fig.layout.coloraxis.colorbar.title.text)
-    except Exception:
-        pass
-
-    return fig
-
-
-
 def render_kpi(label, value, sub="", color="#22c55e"):
     st.markdown(
         f"""
@@ -2235,7 +1748,6 @@ def render_kpi(label, value, sub="", color="#22c55e"):
 
 
 def fig_layout(fig, height=420):
-    fig = translate_fig_for_language(fig)
     fig.update_layout(
         height=height,
         template="plotly_dark",
@@ -2257,15 +1769,13 @@ def chart_config():
 def display_df(df, height=420, label="عرض الجدول"):
     """Keep dashboards clean: tables are hidden by default behind an expander."""
     if df is None or df.empty:
-        st.info(ui("لا توجد بيانات لهذا التقرير ضمن الفلاتر الحالية."))
+        st.info("لا توجد بيانات لهذا التقرير ضمن الفلاتر الحالية.")
         return
 
-    display_data = translate_df_for_display(df)
-    rows_count = len(display_data)
-    cols_count = len(display_data.columns)
-    expander_label = f"📋 {ui(label)} — {format_int(rows_count)} {ui('صف')} / {format_int(cols_count)} {ui('عمود')}"
-    with st.expander(expander_label, expanded=False):
-        st.dataframe(display_data, use_container_width=True, height=height)
+    rows_count = len(df)
+    cols_count = len(df.columns)
+    with st.expander(f"📋 {label} — {format_int(rows_count)} صف / {format_int(cols_count)} عمود", expanded=False):
+        st.dataframe(df, use_container_width=True, height=height)
 
 
 def write_excel_sheet(writer, df, sheet_name):
@@ -2595,92 +2105,62 @@ def render_print_cards(print_df, limit=120):
 
 
 # =========================
-# V8.4 Add-ons - Language + Auto Refresh
-# هذه الإضافات لا تحذف أي تقرير أو وظيفة من V8.3.4
+# V8.3.5 Close Sidebar On Outside Click
+# إخفاء السايد بار عند الضغط خارجها، خصوصاً على الجوال
 # =========================
-st.sidebar.markdown("## 🌐 Language / اللغة")
-LANGUAGE = st.sidebar.radio(
-    "اختر اللغة / Choose language",
-    ["العربية", "English"],
-    index=0,
-    horizontal=True,
-    key="ui_language_selector",
-)
-IS_AR = LANGUAGE == "العربية"
+components.html(
+    """
+    <script>
+    (function() {
+        const doc = window.parent.document;
 
-def tr(ar_text, en_text):
-    return ar_text if IS_AR else en_text
+        if (window.parent.__madSidebarOutsideClickInstalled) {
+            return;
+        }
+        window.parent.__madSidebarOutsideClickInstalled = true;
 
-APP_DIRECTION = "rtl" if IS_AR else "ltr"
-APP_ALIGN = "right" if IS_AR else "left"
+        function findCloseButton() {
+            const selectors = [
+                'button[aria-label="Close sidebar"]',
+                'button[title="Close sidebar"]',
+                'button[kind="header"]',
+                '[data-testid="stSidebarCollapseButton"] button',
+                '[data-testid="collapsedControl"] button'
+            ];
 
-st.markdown(
-    f"""
-    <style>
-        html, body, [data-testid="stAppViewContainer"] {{
-            direction: {APP_DIRECTION};
-        }}
-        .block-container, .hero, .section-title, .mini-title, .kpi-card,
-        .alert-box, .good-box, .note-box, .readability-note,
-        div[data-testid="stMarkdownContainer"], label, p, h1, h2, h3, h4 {{
-            direction: {APP_DIRECTION} !important;
-            text-align: {APP_ALIGN} !important;
-        }}
-        .js-plotly-plot, .plot-container, div[data-testid="stDataFrame"] {{
-            direction: ltr !important;
-        }}
-    </style>
+            for (const sel of selectors) {
+                const btn = doc.querySelector(sel);
+                if (btn) return btn;
+            }
+
+            const buttons = Array.from(doc.querySelectorAll('button'));
+            return buttons.find(b => {
+                const label = (b.getAttribute('aria-label') || b.getAttribute('title') || b.innerText || '').toLowerCase();
+                return label.includes('close sidebar') || label.includes('hide sidebar') || label.includes('collapse');
+            });
+        }
+
+        doc.addEventListener('click', function(event) {
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"][aria-expanded="true"]');
+            if (!sidebar) return;
+
+            const target = event.target;
+            if (sidebar.contains(target)) return;
+
+            const isSidebarControl = target.closest('[data-testid="collapsedControl"]') || target.closest('[data-testid="stSidebarCollapseButton"]');
+            if (isSidebarControl) return;
+
+            const closeButton = findCloseButton();
+            if (closeButton) {
+                closeButton.click();
+            }
+        }, true);
+    })();
+    </script>
     """,
-    unsafe_allow_html=True,
+    height=0,
+    width=0,
 )
-
-st.sidebar.markdown("---")
-st.sidebar.markdown(f"## 🔁 {tr('التحديث التلقائي', 'Auto refresh')}")
-_refresh_options = {
-    tr("إيقاف", "Off"): 0,
-    tr("كل دقيقة", "Every 1 minute"): 60,
-    tr("كل 5 دقائق", "Every 5 minutes"): 300,
-    tr("كل 10 دقائق", "Every 10 minutes"): 600,
-    tr("كل 15 دقيقة", "Every 15 minutes"): 900,
-}
-_auto_refresh_label = st.sidebar.selectbox(
-    tr("معدل التحديث", "Refresh interval"),
-    list(_refresh_options.keys()),
-    index=2,
-    key="auto_refresh_interval",
-)
-_auto_refresh_seconds = _refresh_options[_auto_refresh_label]
-
-if _auto_refresh_seconds > 0:
-    if st_autorefresh is not None:
-        st_autorefresh(
-            interval=_auto_refresh_seconds * 1000,
-            key="orders_dashboard_v84_auto_refresh",
-        )
-        st.sidebar.success(
-            tr(
-                f"يتم التحديث تلقائيًا: {_auto_refresh_label}",
-                f"Auto refresh enabled: {_auto_refresh_label}",
-            )
-        )
-    else:
-        st.sidebar.warning(
-            tr(
-                "التحديث التلقائي يحتاج إضافة streamlit-autorefresh في requirements.txt",
-                "Auto refresh requires streamlit-autorefresh in requirements.txt",
-            )
-        )
-else:
-    st.sidebar.info(tr("التحديث التلقائي متوقف", "Auto refresh is off"))
-
-st.sidebar.caption(
-    tr(
-        f"آخر تشغيل للصفحة: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"Last page run: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-    )
-)
-st.sidebar.markdown("---")
-
 
 
 # =========================
@@ -2689,8 +2169,8 @@ st.sidebar.markdown("---")
 st.markdown(
     f"""
     <div class="hero">
-        <h1>{tr('🧁 مركز تحكم طلبات MAD', '🧁 MAD Orders Control Center')}</h1>
-        <p>{APP_VERSION} — {tr('نفس التقارير التشغيلية والإدارية بالكامل بدون حذف: ملخص تنفيذي، ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، الطاقة التشغيلية، وجودة البيانات.', 'All operational and management reports are preserved: executive summary, branch ranking, product value, filling intelligence, add-ons opportunities, operational capacity, and data quality.')}</p>
+        <h1>🧁 MAD Orders Control Center</h1>
+        <p>{APP_VERSION} — لوحة تشغيل وتقارير إدارية متقدمة: ملخص تنفيذي، ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، الطاقة التشغيلية، وجودة البيانات.</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -2700,49 +2180,73 @@ st.markdown(
 # =========================
 # Sidebar - Data Source
 # =========================
-st.sidebar.markdown(f"## ⚙️ {tr('مصدر البيانات', 'Data source')}")
-_source_display = st.sidebar.radio(
-    tr("اختر المصدر", "Choose source"),
-    ["Google Sheet", tr("رفع ملف", "Upload file")],
-    index=0,
-    horizontal=True,
-)
-source_type = "Google Sheet" if _source_display == "Google Sheet" else "رفع ملف"
+
+# =========================
+# V8.3.5 Auto Refresh Settings
+# تحديث تلقائي فقط بدون تغيير التقارير
+# =========================
+st.sidebar.markdown("## 🔁 تحديث البيانات")
+refresh_options = {
+    "إيقاف": 0,
+    "كل دقيقة": 60,
+    "كل 5 دقائق": 300,
+    "كل 10 دقائق": 600,
+    "كل 15 دقيقة": 900,
+}
+refresh_label = st.sidebar.selectbox("معدل التحديث التلقائي", list(refresh_options.keys()), index=2)
+refresh_seconds = refresh_options[refresh_label]
+
+if refresh_seconds > 0:
+    st.sidebar.success(f"التحديث التلقائي مفعل: {refresh_label}")
+else:
+    st.sidebar.info("التحديث التلقائي متوقف")
+
+st.sidebar.caption(f"آخر تشغيل للصفحة: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.sidebar.markdown("---")
+
+# Browser-side auto refresh.
+# This refreshes the page automatically; Google Sheet cache is 60 seconds.
+if refresh_seconds > 0:
+    components.html(
+        f"""
+        <script>
+        const interval = {refresh_seconds * 1000};
+        if (window.parent.__madOrdersRefreshTimer) {{
+            window.parent.clearTimeout(window.parent.__madOrdersRefreshTimer);
+        }}
+        window.parent.__madOrdersRefreshTimer = window.parent.setTimeout(function() {{
+            window.parent.location.reload();
+        }}, interval);
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+st.sidebar.markdown("## ⚙️ مصدر البيانات")
+source_type = st.sidebar.radio("اختر المصدر", ["Google Sheet", "رفع ملف"], index=0, horizontal=True)
 
 raw_df = None
 load_error = None
 
 if source_type == "Google Sheet":
-    sheet_url = st.sidebar.text_input(
-        tr("رابط Google Sheet", "Google Sheet URL"),
-        value=DEFAULT_GOOGLE_SHEET_URL,
-        placeholder="https://docs.google.com/spreadsheets/d/...",
-    )
-    gid = st.sidebar.text_input(
-        "Sheet GID",
-        value="0",
-        help=tr(
-            "لو الشيت تبويب مختلف، انسخ رقم gid من الرابط. غالباً أول تبويب = 0",
-            "If the data is in another sheet tab, copy the gid from the link. Usually first tab = 0",
-        ),
-    )
+    sheet_url = st.sidebar.text_input("رابط Google Sheet", value=DEFAULT_GOOGLE_SHEET_URL, placeholder="https://docs.google.com/spreadsheets/d/...")
+    gid = st.sidebar.text_input("Sheet GID", value="0", help="لو الشيت تبويب مختلف، انسخ رقم gid من الرابط. غالباً أول تبويب = 0")
     c_refresh, c_status = st.sidebar.columns([1, 1])
     with c_refresh:
-        if st.button(tr("🔄 تحديث الآن", "🔄 Update now")):
+        if st.button("🔄 تحديث الآن"):
             st.cache_data.clear()
             st.rerun()
     try:
-        with st.spinner(tr("جاري تحميل Google Sheet...", "Loading Google Sheet...")):
+        with st.spinner("جاري تحميل Google Sheet..."):
             raw_df = load_google_sheet(sheet_url, gid)
         with c_status:
-            st.success(tr("تم", "Done"))
+            st.success("تم")
     except Exception as e:
         load_error = str(e)
 else:
-    uploaded = st.sidebar.file_uploader(
-        tr("ارفع ملف TXT / CSV / Excel", "Upload TXT / CSV / Excel file"),
-        type=["txt", "csv", "xlsx", "xls"],
-    )
+    uploaded = st.sidebar.file_uploader("ارفع ملف TXT / CSV / Excel", type=["txt", "csv", "xlsx", "xls"])
     if uploaded is not None:
         try:
             raw_df = read_uploaded_file(uploaded)
@@ -2750,21 +2254,13 @@ else:
             load_error = str(e)
 
 if load_error:
-    st.error(
-        tr(
-            "لم أستطع تحميل البيانات. تأكد أن Google Sheet متاح لأي شخص لديه الرابط Viewer أو ارفع ملف مباشرة.",
-            "Could not load the data. Make sure the Google Sheet is shared as Viewer with anyone who has the link, or upload a file directly.",
-        )
-    )
-    with st.expander(tr("تفاصيل الخطأ", "Error details")):
+    st.error("لم أستطع تحميل البيانات. تأكد أن Google Sheet متاح لأي شخص لديه الرابط Viewer أو ارفع ملف مباشرة.")
+    with st.expander("تفاصيل الخطأ"):
         st.code(load_error)
     st.stop()
 
 if raw_df is None or raw_df.empty:
-    st.markdown(
-        f'<div class="note-box">{tr("اربط Google Sheet أو ارفع ملف الطلبات لبدء التحليل.", "Connect Google Sheet or upload the orders file to start analysis.")}</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="note-box">اربط Google Sheet أو ارفع ملف الطلبات لبدء التحليل.</div>', unsafe_allow_html=True)
     st.stop()
 
 
@@ -2783,29 +2279,29 @@ except Exception as e:
 # =========================
 # Sidebar - Filters
 # =========================
-st.sidebar.markdown(f"## 🔎 {tr('فلاتر التحليل', 'Analysis filters')}")
+st.sidebar.markdown("## 🔎 فلاتر التحليل")
 
 available_dates = sorted([d for d in items_all["تاريخ التحليل"].dropna().unique()])
 if available_dates:
     min_date, max_date = min(available_dates), max(available_dates)
-    date_range = st.sidebar.date_input(tr("فترة تاريخ التوصيل", "Delivery date range"), value=(min_date, max_date), min_value=min_date, max_value=max_date)
+    date_range = st.sidebar.date_input("فترة تاريخ التوصيل", value=(min_date, max_date), min_value=min_date, max_value=max_date)
 else:
     date_range = None
 
 branches = sorted(items_all["الفرع"].dropna().unique().tolist())
-selected_branches = st.sidebar.multiselect(tr("الفروع", "Branches"), branches, default=branches)
+selected_branches = st.sidebar.multiselect("الفروع", branches, default=branches)
 
 statuses = sorted(items_all["الحالة"].dropna().unique().tolist())
-selected_statuses = st.sidebar.multiselect(tr("الحالات", "Statuses"), statuses, default=statuses)
+selected_statuses = st.sidebar.multiselect("الحالات", statuses, default=statuses)
 
 varieties = sorted([v for v in items_all["الحشوة"].dropna().unique().tolist() if str(v).strip()])
-selected_varieties = st.sidebar.multiselect(tr("الحشوات", "Fillings"), varieties, default=[])
+selected_varieties = st.sidebar.multiselect("الحشوات", varieties, default=[])
 
 campaigns = sorted(items_all["الحملة"].dropna().unique().tolist())
-selected_campaigns = st.sidebar.multiselect(tr("الحملات", "Campaigns"), campaigns, default=[])
+selected_campaigns = st.sidebar.multiselect("الحملات", campaigns, default=[])
 
-search_text = st.sidebar.text_input(tr("بحث سريع", "Quick search"), placeholder=tr("رقم طلب / عميل / منتج / جوال", "Order / customer / product / mobile"))
-include_cancelled = st.sidebar.checkbox(tr("إظهار الملغي ضمن التقارير", "Show cancelled in reports"), value=False)
+search_text = st.sidebar.text_input("بحث سريع", placeholder="رقم طلب / عميل / منتج / جوال")
+include_cancelled = st.sidebar.checkbox("إظهار الملغي ضمن التقارير", value=False)
 
 filtered = items_all.copy()
 if available_dates and date_range:
@@ -2876,11 +2372,11 @@ if not active_orders.empty:
     if len(th):
         top_hour, top_hour_count = th.index[0], int(th.iloc[0])
 
-st.sidebar.success(tr("تم تحليل البيانات", "Data analyzed"))
-st.sidebar.write(f"{tr('الصفوف', 'Rows')}: **{format_int(total_rows)}**")
-st.sidebar.write(f"{tr('الطلبات', 'Orders')}: **{format_int(total_orders)}**")
-st.sidebar.write(f"{tr('المبيعات', 'Sales')}: **{format_money(total_sales)}**")
-st.sidebar.write(f"{tr('تحتاج متابعة', 'Need action')}: **{format_int(need_action_count)}**")
+st.sidebar.success("تم تحليل البيانات")
+st.sidebar.write(f"الصفوف: **{format_int(total_rows)}**")
+st.sidebar.write(f"الطلبات: **{format_int(total_orders)}**")
+st.sidebar.write(f"المبيعات: **{format_money(total_sales)}**")
+st.sidebar.write(f"تحتاج متابعة: **{format_int(need_action_count)}**")
 
 
 # =========================
@@ -2888,67 +2384,37 @@ st.sidebar.write(f"{tr('تحتاج متابعة', 'Need action')}: **{format_int
 # =========================
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
-    render_kpi(tr(ui("عدد الطلبات"), "Orders"), format_int(total_orders), "Unique Orders", "#2563eb")
+    render_kpi("عدد الطلبات", format_int(total_orders), "Unique Orders", "#2563eb")
 with k2:
-    render_kpi(tr("إجمالي المبيعات", "Total sales"), format_money(total_sales), tr("بدون تكرار قيمة الطلب", "Order value without duplication"), "#16a34a")
+    render_kpi("إجمالي المبيعات", format_money(total_sales), "بدون تكرار قيمة الطلب", "#16a34a")
 with k3:
-    render_kpi(tr("متوسط الطلب", "Average order"), format_money(avg_order), "AOV", "#0891b2")
+    render_kpi("متوسط الطلب", format_money(avg_order), "AOV", "#0891b2")
 with k4:
-    render_kpi(tr("تحتاج متابعة", "Need action"), format_int(need_action_count), tr("صورة / تواصل / كتابة", "Photo / Contact / Writing"), "#dc2626")
+    render_kpi("تحتاج متابعة", format_int(need_action_count), "صورة / تواصل / كتابة", "#dc2626")
 with k5:
-    render_kpi("Upsell", f"{upsell_rate:.1f}%", f"{format_int(addon_orders)} {tr('طلب بإضافات', 'orders with add-ons')}", "#f59e0b")
+    render_kpi("Upsell", f"{upsell_rate:.1f}%", f"{format_int(addon_orders)} طلب بإضافات", "#f59e0b")
 
 
 # =========================
 # Smart Alerts
 # =========================
-st.markdown(f'<div class="section-title">{tr("🚦 تنبيهات ذكية", "🚦 Smart alerts")}</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-title">🚦 تنبيهات ذكية</div>', unsafe_allow_html=True)
 alerts = []
 action_center_count = len(reports.get("action_center", pd.DataFrame()))
 if action_center_count > 0:
-    alerts.append(
-        tr(
-            f"🚨 Action Center: يوجد {format_int(action_center_count)} صف يحتاج إجراء تشغيلي.",
-            f"🚨 Action Center: {format_int(action_center_count)} rows need operational action."
-        )
-    )
+    alerts.append(f"🚨 Action Center: يوجد {format_int(action_center_count)} صف يحتاج إجراء تشغيلي.")
 elif need_action_count > 0:
-    alerts.append(
-        tr(
-            f"⚠️ يوجد {format_int(need_action_count)} طلب يحتاج متابعة مع العميل.",
-            f"⚠️ {format_int(need_action_count)} orders need customer follow-up."
-        )
-    )
+    alerts.append(f"⚠️ يوجد {format_int(need_action_count)} طلب يحتاج متابعة مع العميل.")
 if missing_date_count > 0:
-    alerts.append(
-        tr(
-            f"⚠️ يوجد {format_int(missing_date_count)} صف بدون تاريخ توصيل.",
-            f"⚠️ {format_int(missing_date_count)} rows have no delivery date."
-        )
-    )
+    alerts.append(f"⚠️ يوجد {format_int(missing_date_count)} صف بدون تاريخ توصيل.")
 if missing_time_count > 0:
-    alerts.append(
-        tr(
-            f"⚠️ يوجد {format_int(missing_time_count)} صف بدون وقت استلام.",
-            f"⚠️ {format_int(missing_time_count)} rows have no pickup time."
-        )
-    )
+    alerts.append(f"⚠️ يوجد {format_int(missing_time_count)} صف بدون وقت استلام.")
 if top_hour != "-":
-    alerts.append(
-        tr(
-            f"🔥 أعلى ساعة ضغط: {top_hour} بعدد {format_int(top_hour_count)} طلب.",
-            f"🔥 Peak hour: {translate_value(top_hour)} with {format_int(top_hour_count)} orders."
-        )
-    )
+    alerts.append(f"🔥 أعلى ساعة ضغط: {top_hour} بعدد {format_int(top_hour_count)} طلب.")
 if top_branch != "-":
-    alerts.append(
-        tr(
-            f"🏬 أعلى فرع طلبات: {top_branch} بعدد {format_int(top_branch_count)} طلب.",
-            f"🏬 Top branch by orders: {translate_value(top_branch)} with {format_int(top_branch_count)} orders."
-        )
-    )
+    alerts.append(f"🏬 أعلى فرع طلبات: {top_branch} بعدد {format_int(top_branch_count)} طلب.")
 if not alerts:
-    st.markdown(f'<div class="good-box">{tr("✅ لا توجد تنبيهات حرجة ضمن الفلاتر الحالية.", "✅ No critical alerts in the current filters.")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="good-box">✅ لا توجد تنبيهات حرجة ضمن الفلاتر الحالية.</div>', unsafe_allow_html=True)
 else:
     for alert in alerts[:6]:
         st.markdown(f'<div class="alert-box">{alert}</div>', unsafe_allow_html=True)
@@ -2975,27 +2441,27 @@ else:
     tab_advanced,
     tab_export,
 ) = st.tabs([
-    tr("📍 التشغيل اليومي", "📍 Daily Ops"),
-    tr("🏭 قائمة الإنتاج", "🏭 Production Queue"),
-    tr("✅ مركز الإجراءات", "✅ Action Center"),
-    tr("🖨️ عرض الطباعة", "🖨️ Print View"),
-    tr("🧾 تجهيز الفروع", "🧾 Branch Prep"),
-    tr("💰 المبيعات", "💰 Sales"),
-    tr("🧁 المنتجات", "🧁 Products"),
-    tr("🍰 الحشوات", "🍰 Fillings"),
-    tr("🎈 الإضافات", "🎈 Add-ons"),
-    tr("🚨 تحتاج متابعة", "🚨 Need Action"),
-    tr("🎯 الحملات", "🎯 Campaigns"),
-    tr("🏬 تحليل الفرع", "🏬 Branch Deep Dive"),
-    tr("🔍 تحليل المنتج", "🔍 Product Deep Dive"),
-    tr("🧹 جودة البيانات", "🧹 Data Quality"),
-    tr("📊 التقارير المتقدمة", "📊 Advanced Reports"),
-    tr("⬇️ التصدير", "⬇️ Export"),
+    "📍 Daily Ops",
+    "🏭 Production Queue",
+    "✅ Action Center",
+    "🖨️ Print View",
+    "🧾 Branch Prep",
+    "💰 Sales",
+    "🧁 Products",
+    "🍰 Fillings",
+    "🎈 Add-ons",
+    "🚨 Need Action",
+    "🎯 Campaigns",
+    "🏬 Branch Deep Dive",
+    "🔍 Product Deep Dive",
+    "🧹 Data Quality",
+    "📊 Advanced Reports",
+    "⬇️ Export",
 ])
 
 
 with tab_daily:
-    st.markdown(f'<div class="section-title">{tr("📍 التشغيل اليومي", "📍 Daily Operations")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📍 Daily Operations</div>', unsafe_allow_html=True)
     c1, c2 = st.columns([1.1, 1])
     with c1:
         sales_branch = reports.get("sales_by_branch", pd.DataFrame())
@@ -3004,7 +2470,7 @@ with tab_daily:
             fig.update_traces(textposition="outside")
             st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
         else:
-            st.info(tr("لا يوجد بيانات فروع.", "No branch data."))
+            st.info("لا يوجد بيانات فروع.")
     with c2:
         sales_hour = reports.get("sales_by_hour", pd.DataFrame())
         if not sales_hour.empty:
@@ -3012,7 +2478,7 @@ with tab_daily:
             fig.update_traces(line=dict(width=4), marker=dict(size=10))
             st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
         else:
-            st.info(tr("لا يوجد بيانات ساعات.", "No hour data."))
+            st.info("لا يوجد بيانات ساعات.")
 
     heat = reports.get("branch_hour_heatmap", pd.DataFrame())
     if not heat.empty:
@@ -3020,7 +2486,7 @@ with tab_daily:
         fig.update_xaxes(side="top")
         st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
 
-    st.markdown(f'<div class="mini-title">{ui("أقرب جدول تشغيل ضمن الفلاتر")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mini-title">أقرب جدول تشغيل ضمن الفلاتر</div>', unsafe_allow_html=True)
     ops_cols = ["رقم الطلب", "العميل", "الفرع", "الحالة", "تاريخ التحليل", "وقت الاستلام", "الساعة", "قيمة الطلب", "عدد الأصناف", "عدد الإضافات", "يحتاج متابعة"]
     ops_view_cols = [c for c in ops_cols if c in active_orders.columns]
     ops_sort_cols = [c for c in ["تاريخ ووقت الاستلام", "الفرع"] if c in active_orders.columns]
@@ -3038,9 +2504,9 @@ with tab_daily:
 
 
 with tab_production:
-    st.markdown(f'<div class="section-title">{tr("🏭 قائمة الإنتاج", "🏭 Production Queue")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🏭 Production Queue</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="production-card">{tr("صفحة تجهيز يومية مرتبة حسب وقت الاستلام. استخدمها للفروع والإنتاج لمعرفة المطلوب الآن، وما يحتاج متابعة قبل التجهيز.", "Daily preparation queue sorted by pickup time. Use it for branches and production to know what is needed now and what needs follow-up before preparation.")}</div>',
+        '<div class="production-card">صفحة تجهيز يومية مرتبة حسب وقت الاستلام. استخدمها للفروع والإنتاج لمعرفة المطلوب الآن، وما يحتاج متابعة قبل التجهيز.</div>',
         unsafe_allow_html=True,
     )
 
@@ -3052,27 +2518,27 @@ with tab_production:
         qf1, qf2, qf3, qf4 = st.columns(4)
         with qf1:
             q_branches = ["الكل"] + sorted(queue["الفرع"].dropna().unique().tolist()) if "الفرع" in queue.columns else ["الكل"]
-            q_branch = st.selectbox(ui("فرع التجهيز"), q_branches, key="v8_queue_branch")
+            q_branch = st.selectbox("فرع التجهيز", q_branches, key="v8_queue_branch")
         with qf2:
             if "نطاق ساعة الاستلام" in queue.columns:
                 unique_ranges = queue["نطاق ساعة الاستلام"].dropna().unique().tolist()
                 q_hours = ["الكل"] + sorted(unique_ranges, key=hour_range_sort_value)
             else:
                 q_hours = ["الكل"]
-            q_hour = st.selectbox(ui("نطاق ساعة الاستلام"), q_hours, key="v8_queue_hour")
+            q_hour = st.selectbox("نطاق ساعة الاستلام", q_hours, key="v8_queue_hour")
         with qf3:
             q_statuses = ["الكل"] + sorted(queue["الحالة"].dropna().unique().tolist()) if "الحالة" in queue.columns else ["الكل"]
-            q_status = st.selectbox(ui("الحالة"), q_statuses, key="v8_queue_status")
+            q_status = st.selectbox("الحالة", q_statuses, key="v8_queue_status")
         with qf4:
-            q_priority = st.selectbox(ui("الأولوية"), ["الكل", "عالية", "عادية"], key="v8_queue_priority", format_func=translate_value)
+            q_priority = st.selectbox("الأولوية", ["الكل", "عالية", "عادية"], key="v8_queue_priority")
 
         qf5, qf6, qf7 = st.columns(3)
         with qf5:
-            show_addons_q = st.checkbox(ui("إظهار الإضافات"), value=True, key="v8_queue_addons")
+            show_addons_q = st.checkbox("إظهار الإضافات", value=True, key="v8_queue_addons")
         with qf6:
-            need_action_q = st.checkbox(ui("فقط ما يحتاج متابعة"), value=False, key="v8_queue_need_action")
+            need_action_q = st.checkbox("فقط ما يحتاج متابعة", value=False, key="v8_queue_need_action")
         with qf7:
-            q_search = st.text_input(ui("بحث داخل التجهيز"), placeholder=ui("رقم طلب / منتج / عميل / جوال"), key="v8_queue_search")
+            q_search = st.text_input("بحث داخل التجهيز", placeholder="رقم طلب / منتج / عميل / جوال", key="v8_queue_search")
 
         queue_view = queue.copy()
         if q_branch != "الكل" and "الفرع" in queue_view.columns:
@@ -3098,7 +2564,7 @@ with tab_production:
             render_kpi("صفوف التجهيز", format_int(len(queue_view)), "Items", "#0ea5e9")
         with pq2:
             order_count_q = queue_view["رقم الطلب الموحد"].nunique() if "رقم الطلب الموحد" in queue_view.columns else 0
-            render_kpi(ui("عدد الطلبات"), format_int(order_count_q), "Unique Orders", "#2563eb")
+            render_kpi("عدد الطلبات", format_int(order_count_q), "Unique Orders", "#2563eb")
         with pq3:
             qty_q = queue_view["الكمية رقم"].sum() if "الكمية رقم" in queue_view.columns else 0
             render_kpi("إجمالي الكمية", format_int(qty_q), "Qty", "#16a34a")
@@ -3110,14 +2576,14 @@ with tab_production:
             qc1, qc2 = st.columns([1, 1])
             with qc1:
                 by_hour_col = "نطاق ساعة الاستلام" if "نطاق ساعة الاستلام" in queue_view.columns else "وقت عرض"
-                by_hour_q = queue_view.groupby(by_hour_col, dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
+                by_hour_q = queue_view.groupby(by_hour_col, dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
                 by_hour_q["_sort"] = by_hour_q[by_hour_col].apply(hour_range_sort_value)
                 by_hour_q = by_hour_q.sort_values("_sort").drop(columns=["_sort"])
-                fig = make_safe_bar(by_hour_q, by_hour_col, "عدد الطلبات", text_col="عدد الطلبات", title="ضغط التجهيز حسب نطاق الساعة", fallback_x=["نطاق ساعة الاستلام", "الساعة"], fallback_y=["عدد الطلبات"])
+                fig = px.bar(by_hour_q, x=by_hour_col, y="عدد الطلبات", text="عدد الطلبات", title="ضغط التجهيز حسب نطاق الساعة")
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
             with qc2:
-                by_branch_q = queue_view.groupby("الفرع", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
-                fig = make_safe_bar(by_branch_q, "الفرع", "عدد الطلبات", text_col="عدد الطلبات", title="طلبات التجهيز حسب الفرع", fallback_x=["الفرع"], fallback_y=["عدد الطلبات"])
+                by_branch_q = queue_view.groupby("الفرع", dropna=False)["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
+                fig = px.bar(by_branch_q, x="الفرع", y="عدد الطلبات", text="عدد الطلبات", title="طلبات التجهيز حسب الفرع")
                 st.plotly_chart(make_readable_fig(fig, 430, showlegend=False), use_container_width=True, config=chart_config())
 
         st.markdown('<div class="mini-title">جدول التجهيز</div>', unsafe_allow_html=True)
@@ -3138,7 +2604,7 @@ with tab_production:
 
 
 with tab_action_center:
-    st.markdown(f'<div class="section-title">{tr("✅ مركز الإجراءات", "✅ Action Center")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">✅ Action Center</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="action-card">هذه الصفحة تجمع الطلبات التي تحتاج إجراء: صورة، تواصل، رقم جوال، كتابة خاصة، تعديل تصميم، مشكلة، أو بيانات ناقصة. التعديل هنا مؤقت داخل الجلسة فقط، والحفظ الدائم يكون في V9 عبر Supabase أو Google Sheet Tracking.</div>',
         unsafe_allow_html=True,
@@ -3192,7 +2658,7 @@ with tab_action_center:
             render_kpi("فيها جوال", format_int(phone_count), "WhatsApp ready", "#16a34a")
         with ac4:
             orders_count = action_view["رقم الطلب الموحد"].nunique() if "رقم الطلب الموحد" in action_view.columns else 0
-            render_kpi(ui("عدد الطلبات"), format_int(orders_count), "Unique Orders", "#2563eb")
+            render_kpi("عدد الطلبات", format_int(orders_count), "Unique Orders", "#2563eb")
 
         if not action_view.empty:
             reasons_expanded = []
@@ -3249,7 +2715,7 @@ with tab_action_center:
 
 
 with tab_print:
-    st.markdown(f'<div class="section-title">{tr("🖨️ عرض الطباعة", "🖨️ Print View")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🖨️ Print View</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="readability-note">هذه الصفحة مصممة للطباعة أو Screenshot من الجوال. من المتصفح استخدم Ctrl+P أو Print. الجداول هنا مختصرة وواضحة بدون شارتات.</div>',
         unsafe_allow_html=True,
@@ -3296,16 +2762,16 @@ with tab_print:
 
 
 with tab_prep:
-    st.markdown(f'<div class="section-title">{tr("🧾 تجهيز الفروع", "🧾 Branch Prep Sheet")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🧾 Branch Prep Sheet</div>', unsafe_allow_html=True)
     prep_branches = sorted(active_items["الفرع"].dropna().unique().tolist()) if not active_items.empty else []
-    selected_prep_branch = st.selectbox(ui("اختار الفرع"), prep_branches if prep_branches else ["-"])
+    selected_prep_branch = st.selectbox("اختار الفرع", prep_branches if prep_branches else ["-"])
     prep = active_items[active_items["الفرع"].eq(selected_prep_branch)].copy() if selected_prep_branch != "-" else pd.DataFrame()
     prep_cols = ["وقت الاستلام الأصلي", "رقم الطلب الظاهر", "الحالة", "العميل", "المنتج", "الحشوة", "الكمية رقم", "إجمالي المنتج رقم", "سبب المتابعة", "الملاحظة"]
     prep_view = prep[[c for c in prep_cols if c in prep.columns]].sort_values(["وقت الاستلام الأصلي", "رقم الطلب الظاهر"], na_position="last") if not prep.empty else pd.DataFrame()
     display_df(prep_view, 560)
     if not prep_view.empty:
         st.download_button(
-            tr("⬇️ تحميل تقرير تجهيز الفرع Excel", "⬇️ Download branch prep Excel"),
+            "⬇️ تحميل تقرير تجهيز الفرع Excel",
             data=branch_prep_excel(prep_view, selected_prep_branch),
             file_name=f"branch_prep_{selected_prep_branch}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3313,7 +2779,7 @@ with tab_prep:
 
 
 with tab_sales:
-    st.markdown(f'<div class="section-title">{tr("💰 تحليل المبيعات", "💰 Sales Analytics")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">💰 Sales Analytics</div>', unsafe_allow_html=True)
     b1, b2 = st.columns(2)
     with b1:
         dfb = reports.get("sales_by_branch", pd.DataFrame())
@@ -3328,16 +2794,16 @@ with tab_sales:
             st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
         display_df(dfh, 330)
 
-    st.markdown(f'<div class="mini-title">{ui("الحالات حسب الفرع")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mini-title">الحالات حسب الفرع</div>', unsafe_allow_html=True)
     status_df = reports.get("status_report", pd.DataFrame())
     if not status_df.empty:
-        fig = px.bar(status_df, x="الفرع", y="عدد الطلبات", color="الحالة", barmode="group", title=ui("حالات الطلبات حسب الفرع"), labels=px_labels())
+        fig = px.bar(status_df, x="الفرع", y="عدد الطلبات", color="الحالة", barmode="group", title="حالات الطلبات حسب الفرع")
         st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
     display_df(status_df, 330)
 
 
 with tab_products:
-    st.markdown(f'<div class="section-title">{tr("🧁 أداء المنتجات", "🧁 Product Performance")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🧁 Product Performance</div>', unsafe_allow_html=True)
     prod = reports.get("product_performance", pd.DataFrame())
     if not prod.empty:
         top_prod = prod.head(15)
@@ -3345,14 +2811,14 @@ with tab_products:
         st.plotly_chart(fig_layout(fig, 560), use_container_width=True, config=chart_config())
     display_df(prod, 500)
 
-    st.markdown(f'<div class="mini-title">{ui("المنتجات حسب الفرع")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mini-title">المنتجات حسب الفرع</div>', unsafe_allow_html=True)
     display_df(reports.get("product_by_branch", pd.DataFrame()), 420)
 
     st.markdown('<div class="note-box">تم نقل تقارير الحشوات إلى تبويب مستقل باسم 🍰 Fillings حتى تكون واضحة ومفصلة.</div>', unsafe_allow_html=True)
 
 
 with tab_varieties:
-    st.markdown(f'<div class="section-title">{tr("🍰 الحشوات", "🍰 Fillings")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🍰 Fillings / الحشوات</div>', unsafe_allow_html=True)
 
     variety = reports.get("variety_report", pd.DataFrame())
     variety_by_branch = reports.get("variety_by_branch", pd.DataFrame())
@@ -3561,7 +3027,7 @@ with tab_varieties:
 
 
 with tab_addons:
-    st.markdown(f'<div class="section-title">{tr("🎈 الإضافات والبيع الإضافي", "🎈 Add-ons & Upsell")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🎈 Add-ons & Upsell</div>', unsafe_allow_html=True)
     a1, a2, a3 = st.columns(3)
     with a1:
         render_kpi("طلبات بإضافات", format_int(addon_orders), "Orders with add-ons", "#f97316")
@@ -3581,7 +3047,7 @@ with tab_addons:
 
 
 with tab_actions:
-    st.markdown(f'<div class="section-title">{tr("🚨 طلبات تحتاج متابعة", "🚨 Orders Need Action")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🚨 Orders Need Action</div>', unsafe_allow_html=True)
     reasons = reports.get("need_action_reasons", pd.DataFrame())
     if not reasons.empty:
         fig = px.bar(reasons, x="سبب المتابعة", y="عدد الحالات", text="عدد الحالات", title="أسباب المتابعة", color="عدد الحالات", color_continuous_scale="Reds")
@@ -3590,7 +3056,7 @@ with tab_actions:
 
 
 with tab_campaigns:
-    st.markdown(f'<div class="section-title">{tr("🎯 تحليل الحملات", "🎯 Campaign Analyzer")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🎯 Campaign Analyzer</div>', unsafe_allow_html=True)
     camp = reports.get("campaign_summary", pd.DataFrame())
     if not camp.empty:
         fig = px.bar(camp, x="الحملة", y="عدد_الطلبات", text="عدد_الطلبات", title="أداء الحملات حسب عدد الطلبات", color="عدد_الطلبات", color_continuous_scale="Purples")
@@ -3601,17 +3067,17 @@ with tab_campaigns:
 
 
 with tab_branch:
-    st.markdown(f'<div class="section-title">{tr("🏬 تحليل الفرع", "🏬 Branch Deep Dive")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🏬 Branch Deep Dive</div>', unsafe_allow_html=True)
     bd_branches = sorted(active_items["الفرع"].dropna().unique().tolist()) if not active_items.empty else []
-    bd_branch = st.selectbox(ui("اختار فرع للتحليل العميق"), bd_branches if bd_branches else ["-"], key="bd_branch")
+    bd_branch = st.selectbox("اختار فرع للتحليل العميق", bd_branches if bd_branches else ["-"], key="bd_branch")
     b_items = active_items[active_items["الفرع"].eq(bd_branch)].copy() if bd_branch != "-" else pd.DataFrame()
     b_orders = active_orders[active_orders["الفرع"].eq(bd_branch)].copy() if bd_branch != "-" else pd.DataFrame()
     if not b_orders.empty:
         c1, c2, c3, c4 = st.columns(4)
-        with c1: render_kpi(ui("طلبات الفرع"), format_int(b_orders["رقم الطلب الموحد"].nunique()), translate_value(bd_branch), "#2563eb")
-        with c2: render_kpi(ui("مبيعات الفرع"), format_money(b_orders["قيمة الطلب"].sum()), "", "#16a34a")
-        with c3: render_kpi(ui("متوسط الطلب"), format_money(b_orders["قيمة الطلب"].mean()), "", "#0891b2")
-        with c4: render_kpi(ui("تحتاج متابعة"), format_int(b_orders["يحتاج متابعة"].sum()), "", "#dc2626")
+        with c1: render_kpi("طلبات الفرع", format_int(b_orders["رقم الطلب الموحد"].nunique()), bd_branch, "#2563eb")
+        with c2: render_kpi("مبيعات الفرع", format_money(b_orders["قيمة الطلب"].sum()), "", "#16a34a")
+        with c3: render_kpi("متوسط الطلب", format_money(b_orders["قيمة الطلب"].mean()), "", "#0891b2")
+        with c4: render_kpi("تحتاج متابعة", format_int(b_orders["يحتاج متابعة"].sum()), "", "#dc2626")
         col1, col2 = st.columns(2)
         with col1:
             bp = b_items[~b_items["إضافة؟"]].groupby("المنتج").agg(الكمية=("الكمية رقم", "sum"), الطلبات=("رقم الطلب الموحد", "nunique")).reset_index().sort_values("الكمية", ascending=False).head(12)
@@ -3619,31 +3085,31 @@ with tab_branch:
                 fig = px.bar(bp.sort_values("الكمية"), x="الكمية", y="المنتج", orientation="h", title="أفضل منتجات الفرع")
                 st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=chart_config())
         with col2:
-            bh = b_orders.groupby("الساعة")["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات"))
+            bh = b_orders.groupby("الساعة")["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات")
             if not bh.empty:
-                fig = px.line(bh, x="الساعة", y="عدد الطلبات", markers=True, title=ui("ضغط الفرع حسب الساعة"), labels=px_labels())
+                fig = px.line(bh, x="الساعة", y="عدد الطلبات", markers=True, title="ضغط الفرع حسب الساعة")
                 st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=chart_config())
         display_df(b_items[[c for c in ["رقم الطلب الظاهر", "الحالة", "وقت الاستلام الأصلي", "العميل", "المنتج", "الحشوة", "الكمية رقم", "سبب المتابعة", "الملاحظة"] if c in b_items.columns]], 500)
     else:
-        st.info(tr("لا توجد بيانات لهذا الفرع ضمن الفلاتر.", "No data for this branch with the current filters."))
+        st.info("لا توجد بيانات لهذا الفرع ضمن الفلاتر.")
 
 
 with tab_product:
-    st.markdown(f'<div class="section-title">{tr("🔍 تحليل المنتج", "🔍 Product Deep Dive")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🔍 Product Deep Dive</div>', unsafe_allow_html=True)
     product_list = sorted(active_items[~active_items["إضافة؟"]]["المنتج"].dropna().unique().tolist()) if not active_items.empty else []
-    selected_product = st.selectbox(ui("اختار المنتج"), product_list if product_list else ["-"])
+    selected_product = st.selectbox("اختار المنتج", product_list if product_list else ["-"])
     p_items = active_items[active_items["المنتج"].eq(selected_product)].copy() if selected_product != "-" else pd.DataFrame()
     if not p_items.empty:
         p_order_ids = p_items["رقم الطلب الموحد"].unique().tolist()
         p_orders = active_orders[active_orders["رقم الطلب الموحد"].isin(p_order_ids)].copy()
         c1, c2, c3, c4 = st.columns(4)
-        with c1: render_kpi(ui("طلبات المنتج"), format_int(p_items["رقم الطلب الموحد"].nunique()), "", "#2563eb")
-        with c2: render_kpi(ui("كمية المنتج"), format_int(p_items["الكمية رقم"].sum()), "", "#16a34a")
-        with c3: render_kpi(ui("مبيعات المنتج"), format_money(p_items["إجمالي المنتج رقم"].sum()), "Item Total", "#0891b2")
-        with c4: render_kpi(ui("طلبات بإضافات"), format_int(p_orders["فيه إضافات"].sum()) if not p_orders.empty else "0", "", "#f59e0b")
+        with c1: render_kpi("طلبات المنتج", format_int(p_items["رقم الطلب الموحد"].nunique()), "", "#2563eb")
+        with c2: render_kpi("كمية المنتج", format_int(p_items["الكمية رقم"].sum()), "", "#16a34a")
+        with c3: render_kpi("مبيعات المنتج", format_money(p_items["إجمالي المنتج رقم"].sum()), "Item Total", "#0891b2")
+        with c4: render_kpi("طلبات بإضافات", format_int(p_orders["فيه إضافات"].sum()) if not p_orders.empty else "0", "", "#f59e0b")
         col1, col2 = st.columns(2)
         with col1:
-            pb = p_items.groupby("الفرع")["رقم الطلب الموحد"].nunique().reset_index(name=ui("عدد الطلبات")).sort_values(ui("عدد الطلبات"), ascending=False)
+            pb = p_items.groupby("الفرع")["رقم الطلب الموحد"].nunique().reset_index(name="عدد الطلبات").sort_values("عدد الطلبات", ascending=False)
             if not pb.empty:
                 fig = px.bar(pb, x="الفرع", y="عدد الطلبات", text="عدد الطلبات", title="المنتج حسب الفرع")
                 st.plotly_chart(fig_layout(fig, 420), use_container_width=True, config=chart_config())
@@ -3652,28 +3118,28 @@ with tab_product:
             if not pv.empty:
                 fig = px.pie(pv, names="الحشوة", values="الكمية", hole=.52, title="حشوات المنتج")
                 st.plotly_chart(fig_layout(fig, 420), use_container_width=True, config=chart_config())
-        st.markdown(f'<div class="mini-title">{ui("كل طلبات المنتج")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="mini-title">كل طلبات المنتج</div>', unsafe_allow_html=True)
         display_df(p_items[[c for c in ["رقم الطلب الظاهر", "الفرع", "الحالة", "وقت الاستلام الأصلي", "العميل", "الحشوة", "الكمية رقم", "إجمالي المنتج رقم", "سبب المتابعة", "الملاحظة"] if c in p_items.columns]], 520)
     else:
-        st.info(tr("لا توجد بيانات لهذا المنتج ضمن الفلاتر.", "No data for this product with the current filters."))
+        st.info("لا توجد بيانات لهذا المنتج ضمن الفلاتر.")
 
 
 with tab_quality:
-    st.markdown(f'<div class="section-title">{tr("🧹 جودة البيانات", "🧹 Data Quality")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🧹 Data Quality</div>', unsafe_allow_html=True)
     qsum = reports.get("data_quality_summary", pd.DataFrame())
     if not qsum.empty:
         fig = px.bar(qsum, x="المشكلة", y="عدد الصفوف", color="الأهمية", text="عدد الصفوف", title="مشاكل جودة البيانات")
         st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=chart_config())
     display_df(qsum, 300)
-    st.markdown(f'<div class="mini-title">{ui("تفاصيل الصفوف التي تحتاج تنظيف")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mini-title">تفاصيل الصفوف التي تحتاج تنظيف</div>', unsafe_allow_html=True)
     display_df(reports.get("data_quality_details", pd.DataFrame()), 520)
 
 
 
 with tab_advanced:
-    st.markdown(f'<div class="section-title">{tr("📊 باقة التقارير المتقدمة V8.4", "📊 V8.4 Advanced Reports Pack")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📊 V8.3 Advanced Reports Pack</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div class="report-card">{tr("تقارير إدارية متقدمة لاتخاذ القرار: ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، ملاحظات العملاء، جودة البيانات، الطاقة التشغيلية، والحملات.", "Advanced management reports for decision-making: branch ranking, product value, filling intelligence, add-on opportunities, customer notes, data quality, operational capacity, and campaigns.")}</div>',
+        '<div class="report-card">تقارير إدارية متقدمة لاتخاذ القرار: ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، ملاحظات العملاء، جودة البيانات، الطاقة التشغيلية، والحملات.</div>',
         unsafe_allow_html=True,
     )
 
@@ -3693,13 +3159,13 @@ with tab_advanced:
     # Executive KPIs
     ar1, ar2, ar3, ar4 = st.columns(4)
     with ar1:
-        render_kpi(ui("أفضل فرع بالمبيعات"), short_label(translate_value(top_branch), 26), f"{format_int(top_branch_count)} {tr('طلب', 'orders')}", "#f59e0b")
+        render_kpi("أفضل فرع بالمبيعات", short_label(top_branch, 26), f"{format_int(top_branch_count)} طلب", "#f59e0b")
     with ar2:
         render_kpi("Upsell Rate", f"{upsell_rate:.1f}%", f"{format_int(addon_orders)} طلب بإضافات", "#16a34a")
     with ar3:
         render_kpi("Action Rate", f"{(need_action_count / total_orders * 100 if total_orders else 0):.1f}%", f"{format_int(need_action_count)} طلب", "#dc2626")
     with ar4:
-        render_kpi(ui("أعلى نطاق ساعة"), translate_value(top_hour), f"{format_int(top_hour_count)} {tr('طلب', 'orders')}", "#0ea5e9")
+        render_kpi("أعلى نطاق ساعة", top_hour, f"{format_int(top_hour_count)} طلب", "#0ea5e9")
 
     display_df(exec_summary, 320, "عرض Executive Summary")
 
@@ -3719,7 +3185,7 @@ with tab_advanced:
             color_continuous_scale="RdYlGn_r",
             hover_data={"الفرع": True, "المبيعات": ":,.0f", "متوسط_الطلب": ":,.0f", "نسبة_Upsell_%": True, "نسبة_متابعة_%": True, "الفرع للعرض": False},
         )
-        fig.update_traces(texttemplate="%{text} " + tr("طلب", "orders"), textposition="outside", cliponaxis=False)
+        fig.update_traces(texttemplate="%{text} طلب", textposition="outside", cliponaxis=False)
         st.plotly_chart(make_readable_fig(fig, 560, showlegend=False), use_container_width=True, config=chart_config())
     display_df(branch_rank, 520, "عرض جدول Branch Ranking")
 
@@ -3841,7 +3307,7 @@ with tab_advanced:
             fig.add_trace(go.Scatter(x=hourly_capacity["نطاق ساعة الاستلام"], y=hourly_capacity["الكمية"], name="الكمية", mode="lines+markers", yaxis="y2"))
         fig.update_layout(
             title="الطاقة التشغيلية حسب نطاق الساعة",
-            yaxis=dict(title=ui("عدد الطلبات")),
+            yaxis=dict(title="عدد الطلبات"),
             yaxis2=dict(title="الكمية", overlaying="y", side="right"),
         )
         st.plotly_chart(make_readable_fig(fig, 560, showlegend=True), use_container_width=True, config=chart_config())
@@ -3861,17 +3327,17 @@ with tab_advanced:
             title="أداء الحملات حسب المبيعات والمتابعة",
             hover_data={"أفضل_فرع": True, "أفضل_منتج": True, "أفضل_حشوة": True},
         )
-        fig.update_traces(texttemplate="%{text} " + tr("طلب", "orders"), textposition="outside", cliponaxis=False)
+        fig.update_traces(texttemplate="%{text} طلب", textposition="outside", cliponaxis=False)
         st.plotly_chart(make_readable_fig(fig, 520, showlegend=False), use_container_width=True, config=chart_config())
     display_df(campaign_perf, 440, "عرض Campaign Performance")
 
 
 with tab_export:
-    st.markdown(f'<div class="section-title">{tr("⬇️ مركز التصدير", "⬇️ Export Center")}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">⬇️ Export Center</div>', unsafe_allow_html=True)
     summary_rows = [
         {"البند": "الإصدار", "القيمة": APP_VERSION},
         {"البند": "عدد الصفوف بعد الفلاتر", "القيمة": total_rows},
-        {"البند": ui("عدد الطلبات"), "القيمة": total_orders},
+        {"البند": "عدد الطلبات", "القيمة": total_orders},
         {"البند": "إجمالي المبيعات", "القيمة": total_sales},
         {"البند": "متوسط الطلب", "القيمة": avg_order},
         {"البند": "طلبات تحتاج متابعة", "القيمة": need_action_count},
@@ -3884,12 +3350,12 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        tr("⬇️ تحميل Excel شامل كل التقارير V8.4", "⬇️ Download Excel with all V8.4 reports"),
+        "⬇️ تحميل Excel شامل كل التقارير V8.3.4",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_4.xlsx",
+        file_name="MAD_Orders_Control_Center_V8_3_4.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
-        f'<div class="note-box">{tr("الملف يحتوي على Executive Summary، Advanced Reports Pack، Branch Ranking، Product Value، Filling Intelligence، Add-ons Opportunity، Customer Notes، Data Quality Score، Hourly Capacity، Campaign Performance، وكل تقارير التشغيل السابقة.", "The file includes Executive Summary, Advanced Reports Pack, Branch Ranking, Product Value, Filling Intelligence, Add-ons Opportunity, Customer Notes, Data Quality Score, Hourly Capacity, Campaign Performance, and all previous operational reports.")}</div>',
+        '<div class="note-box">الملف يحتوي على Executive Summary، Advanced Reports Pack، Branch Ranking، Product Value، Filling Intelligence، Add-ons Opportunity، Customer Notes، Data Quality Score، Hourly Capacity، Campaign Performance، وكل تقارير التشغيل السابقة.</div>',
         unsafe_allow_html=True,
     )
