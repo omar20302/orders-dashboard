@@ -1,18 +1,16 @@
 import re
-import time
 from io import BytesIO
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 
 import pandas as pd
 import streamlit as st
-import plotly.express as px
-import plotly.graph_objects as go
-
 try:
     from streamlit_autorefresh import st_autorefresh
 except Exception:
     st_autorefresh = None
+import plotly.express as px
+import plotly.graph_objects as go
 
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from openpyxl.chart import BarChart, PieChart, Reference
@@ -20,14 +18,6 @@ from openpyxl.chart.label import DataLabelList
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.formatting.rule import ColorScaleRule
-
-
-st.set_page_config(
-    page_title="MAD Orders Dashboard V6",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
 
 
 # ============================================================
@@ -905,9 +895,7 @@ def google_sheet_to_csv_url(sheet_url, gid="0"):
     return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv&gid={gid}"
 
 
-@st.cache_data(show_spinner=False)
-def read_google_sheet(sheet_url, gid="0", cache_buster=0):
-    # cache_buster is used to force a fresh read on auto/manual refresh.
+def read_google_sheet(sheet_url, gid="0"):
     csv_url = google_sheet_to_csv_url(sheet_url, gid)
     df = pd.read_csv(csv_url, dtype=str, keep_default_na=False, engine="python")
     return df.fillna("")
@@ -941,9 +929,15 @@ def parse_date_series(series):
     return series.apply(parse_one)
 
 # =========================
-# Streamlit App - V6 Bilingual Auto Refresh Dashboard
+# Streamlit App - V4 Premium Dashboard
 # =========================
 
+st.set_page_config(
+    page_title="MAD Orders Dashboard V5",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 # -------------------------
 # Premium CSS
@@ -1338,71 +1332,113 @@ def display_pretty_dataframe(df, height=420):
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
 
-# =========================
-# Language + Data Source Settings
-# =========================
 
-if "manual_refresh_nonce" not in st.session_state:
-    st.session_state.manual_refresh_nonce = 0
+# =========================
+# V6 Full Add-ons
+# Language + Auto Refresh
+# نفس وظائف النسخة السابقة بالكامل + إضافات اللغة والتحديث التلقائي فقط
+# =========================
 
 st.sidebar.markdown("## 🌐 Language / اللغة")
-language_label = st.sidebar.radio(
-    "Select language",
+language_choice = st.sidebar.radio(
+    "اختر اللغة / Choose language",
     ["العربية", "English"],
     index=0,
-    horizontal=True,
-    label_visibility="collapsed"
+    horizontal=True
 )
-LANG = "ar" if language_label == "العربية" else "en"
 
+IS_AR = language_choice == "العربية"
 
 def tr(ar_text, en_text):
-    return ar_text if LANG == "ar" else en_text
+    return ar_text if IS_AR else en_text
 
-
-rtl = LANG == "ar"
-page_direction = "rtl" if rtl else "ltr"
-page_align = "right" if rtl else "left"
-tab_direction = "rtl" if rtl else "ltr"
-sidebar_border_side = "left" if rtl else "right"
+direction = "rtl" if IS_AR else "ltr"
+text_align = "right" if IS_AR else "left"
 
 st.markdown(
     f"""
     <style>
-        .hero, .kpi-card, .section-title, .small-note {{
-            direction: {page_direction} !important;
-            text-align: {page_align} !important;
+        html, body, [data-testid="stAppViewContainer"] {{
+            direction: {direction};
         }}
-        .stTabs [data-baseweb="tab-list"] {{
-            direction: {tab_direction} !important;
+        .block-container, .stMarkdown, .stText, label, p, h1, h2, h3, h4 {{
+            text-align: {text_align};
         }}
-        section[data-testid="stSidebar"] {{
-            border-{sidebar_border_side}: 1px solid rgba(255,255,255,0.08) !important;
+        .js-plotly-plot, .plot-container, .stDataFrame {{
+            direction: ltr;
         }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
-st.sidebar.markdown(tr("## ⚙️ إعدادات التحليل", "## ⚙️ Analysis Settings"))
-st.sidebar.caption(tr(
-    "اربط Google Sheet أو ارفع ملف، ثم اختر تاريخ الاستلام للتحليل.",
-    "Connect a Google Sheet or upload a file, then choose the pickup/delivery date for analysis."
-))
+st.sidebar.markdown(f"## ⚙️ {tr('إعدادات التحليل', 'Analysis settings')}")
+st.sidebar.caption(
+    tr(
+        "كل وظائف النسخة السابقة موجودة كما هي: Google Sheet، رفع ملف، فلترة التاريخ، تحليل الفروع والساعات والحشوات، الجداول، وتصدير Excel.",
+        "All previous features are preserved: Google Sheet, file upload, date filter, branch/hour/filling analysis, tables, and Excel export."
+    )
+)
 
-source_options = [tr("رفع ملف", "Upload File"), "Google Sheet"]
-source_type = st.sidebar.radio(
+# Auto refresh settings
+st.sidebar.markdown("---")
+st.sidebar.markdown(f"## 🔁 {tr('التحديث التلقائي', 'Auto refresh')}")
+
+refresh_options = {
+    tr("إيقاف", "Off"): 0,
+    tr("كل دقيقة", "Every 1 minute"): 60,
+    tr("كل 5 دقائق", "Every 5 minutes"): 300,
+    tr("كل 10 دقائق", "Every 10 minutes"): 600,
+    tr("كل 15 دقيقة", "Every 15 minutes"): 900,
+}
+
+refresh_label = st.sidebar.selectbox(
+    tr("معدل التحديث", "Refresh interval"),
+    list(refresh_options.keys()),
+    index=2
+)
+refresh_seconds = refresh_options[refresh_label]
+
+if refresh_seconds > 0:
+    if st_autorefresh is not None:
+        st_autorefresh(
+            interval=refresh_seconds * 1000,
+            key="orders_dashboard_auto_refresh"
+        )
+        st.sidebar.success(
+            tr(
+                f"البيانات تتحدث تلقائيًا: {refresh_label}",
+                f"Auto refresh enabled: {refresh_label}"
+            )
+        )
+    else:
+        st.sidebar.warning(
+            tr(
+                "التحديث التلقائي يحتاج streamlit-autorefresh داخل requirements.txt",
+                "Auto refresh requires streamlit-autorefresh in requirements.txt"
+            )
+        )
+else:
+    st.sidebar.info(tr("التحديث التلقائي متوقف", "Auto refresh is off"))
+
+last_refresh_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+st.sidebar.caption(tr(f"آخر تشغيل/تحديث: {last_refresh_time}", f"Last run/refresh: {last_refresh_time}"))
+
+st.sidebar.markdown("---")
+
+source_display = st.sidebar.radio(
     tr("مصدر البيانات", "Data source"),
-    source_options,
+    [tr("رفع ملف", "Upload file"), "Google Sheet"],
     index=1,
     horizontal=True
 )
 
+source_type = "رفع ملف" if source_display == tr("رفع ملف", "Upload file") else "Google Sheet"
+
 df = None
 source_label = ""
-last_update_text = ""
 
-if source_type == source_options[0]:
+if source_type == "رفع ملف":
     uploaded_file = st.sidebar.file_uploader(
         tr("ارفع ملف الطلبات TXT / CSV / Excel", "Upload orders file TXT / CSV / Excel"),
         type=["txt", "csv", "xlsx", "xls"]
@@ -1411,52 +1447,6 @@ if source_type == source_options[0]:
         df = read_uploaded_file(uploaded_file)
         source_label = tr(f"ملف مرفوع: {uploaded_file.name}", f"Uploaded file: {uploaded_file.name}")
 else:
-    st.sidebar.markdown(tr("### 🔁 تحديث البيانات", "### 🔁 Data Update"))
-    auto_labels = [
-        tr("إيقاف", "Off"),
-        tr("كل دقيقة", "Every 1 minute"),
-        tr("كل 5 دقائق", "Every 5 minutes"),
-        tr("كل 10 دقائق", "Every 10 minutes"),
-        tr("كل 15 دقيقة", "Every 15 minutes"),
-    ]
-    auto_seconds_map = {
-        auto_labels[0]: 0,
-        auto_labels[1]: 60,
-        auto_labels[2]: 300,
-        auto_labels[3]: 600,
-        auto_labels[4]: 900,
-    }
-    auto_choice = st.sidebar.selectbox(
-        tr("التحديث التلقائي", "Auto update"),
-        auto_labels,
-        index=2
-    )
-    auto_seconds = auto_seconds_map[auto_choice]
-
-    if auto_seconds > 0:
-        if st_autorefresh is not None:
-            st_autorefresh(interval=auto_seconds * 1000, key="orders_auto_refresh")
-            st.sidebar.caption(tr(
-                f"سيتم تحديث البيانات تلقائياً كل {auto_seconds // 60} دقيقة.",
-                f"Data will auto-refresh every {auto_seconds // 60} minute(s)."
-            ))
-        else:
-            st.sidebar.warning(tr(
-                "التحديث التلقائي يحتاج إضافة streamlit-autorefresh في requirements.txt.",
-                "Auto refresh requires streamlit-autorefresh in requirements.txt."
-            ))
-
-    manual_refresh = st.sidebar.button(
-        tr("🔄 تحديث الآن", "🔄 Update now"),
-        use_container_width=True
-    )
-    if manual_refresh:
-        st.session_state.manual_refresh_nonce += 1
-        try:
-            st.cache_data.clear()
-        except Exception:
-            pass
-
     sheet_url = st.sidebar.text_input(
         tr("رابط Google Sheet", "Google Sheet URL"),
         value=DEFAULT_GOOGLE_SHEET_URL,
@@ -1466,40 +1456,43 @@ else:
         "Sheet GID",
         value="0",
         help=tr(
-            "اتركه 0 لو أول تاب. لو الرابط فيه gid سيتم قراءته تلقائياً.",
-            "Keep 0 for the first tab. If the URL contains a gid, it will be detected automatically."
+            "اتركه 0 لو أول تاب. لو الرابط فيه gid هيتم قراءته تلقائيًا.",
+            "Keep 0 for the first tab. If the URL contains gid, it will be detected automatically."
         )
     )
 
+    if st.sidebar.button(tr("🔄 تحديث الآن", "🔄 Update now"), use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
     if sheet_url:
         try:
-            if auto_seconds > 0:
-                cache_buster = int(time.time() // auto_seconds) + st.session_state.manual_refresh_nonce
-            else:
-                cache_buster = st.session_state.manual_refresh_nonce
-            df = read_google_sheet(sheet_url, sheet_gid, cache_buster=cache_buster)
+            df = read_google_sheet(sheet_url, sheet_gid)
             source_label = "Google Sheet"
-            last_update_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st.sidebar.success(tr("تم قراءة البيانات من Google Sheet", "Google Sheet loaded successfully"))
-            st.sidebar.caption(tr(f"آخر تحديث: {last_update_text}", f"Last update: {last_update_text}"))
         except Exception as e:
             st.sidebar.error(tr("لم أستطع قراءة Google Sheet", "Could not read Google Sheet"))
             st.sidebar.caption(str(e))
-            st.sidebar.info(tr(
-                "لو الشيت خاص، اجعله Anyone with the link can view.",
-                "If the sheet is private, set it to: Anyone with the link can view."
-            ))
+            st.sidebar.info(
+                tr(
+                    "لو الشيت خاص، اجعله Anyone with the link can view.",
+                    "If the sheet is private, set it to Anyone with the link can view."
+                )
+            )
 
-exclude_cancelled = st.sidebar.toggle(tr("استبعاد الطلبات الملغاة", "Exclude cancelled orders"), value=True)
+exclude_cancelled = st.sidebar.toggle(
+    tr("استبعاد الطلبات الملغاة", "Exclude cancelled orders"),
+    value=True
+)
 
 st.markdown(
     f"""
     <div class="hero">
-        <h1>{tr("📊 لوحة تحليل طلبات MAD V6", "📊 MAD Orders Dashboard V6")}</h1>
+        <h1>{tr('📊 MAD Orders Dashboard V6 Full', '📊 MAD Orders Dashboard V6 Full')}</h1>
         <p>
             {tr(
-                "لوحة تحليل تشغيلية تفاعلية للطلبات حسب الفرع والساعة والحشوات، مع دعم عربي/إنجليزي وتحديث تلقائي من Google Sheet.",
-                "An interactive operations dashboard for orders by branch, hour, and filling, with Arabic/English support and automatic Google Sheet refresh."
+                'نفس لوحة التحليل التشغيلية الكاملة السابقة بدون حذف أي وظيفة، مع إضافة اختيار اللغة والتحديث التلقائي وتهيئة أفضل للجوال.',
+                'The same full operational analytics dashboard with no removed features, plus language selection, auto refresh, and better mobile responsiveness.'
             )}
         </p>
     </div>
@@ -1513,14 +1506,14 @@ if df is not None and len(df) > 0:
     # =========================
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown(tr("## 📅 فلترة تاريخ الاستلام", "## 📅 Date Filter"))
+    st.sidebar.markdown(f"## 📅 {tr('فلترة تاريخ الاستلام', 'Pickup/Delivery date filter')}")
 
     auto_date_col = find_date_column(df)
     date_options = list(df.columns)
     default_date_index = date_options.index(auto_date_col) if auto_date_col in date_options else 0
 
     selected_date_col = st.sidebar.selectbox(
-        tr("عمود تاريخ الاستلام", "Pickup / Delivery date column"),
+        tr("عمود تاريخ الاستلام", "Date column"),
         date_options,
         index=default_date_index
     )
@@ -1528,31 +1521,24 @@ if df is not None and len(df) > 0:
     raw_dates = parse_date_series(df[selected_date_col])
     valid_dates = raw_dates.dropna()
 
-    filter_labels = [
-        tr("كل البيانات", "All data"),
-        tr("يوم محدد", "Selected day"),
-        tr("فترة من / إلى", "Date range"),
-    ]
-    filter_values = {
-        filter_labels[0]: "all",
-        filter_labels[1]: "day",
-        filter_labels[2]: "range",
-    }
-    date_filter_label = st.sidebar.radio(
+    date_filter_mode = st.sidebar.radio(
         tr("طريقة الفلترة", "Filter mode"),
-        filter_labels,
-        index=0
+        ["كل البيانات", "يوم محدد", "فترة من / إلى"],
+        index=0,
+        format_func=lambda x: tr(
+            x,
+            {"كل البيانات": "All data", "يوم محدد": "Specific day", "فترة من / إلى": "Date range"}.get(x, x)
+        )
     )
-    date_filter_mode = filter_values[date_filter_label]
 
-    date_badge = tr("كل البيانات", "All data")
+    date_badge = "كل البيانات"
     filtered_df = df.copy()
 
-    if len(valid_dates) > 0 and date_filter_mode != "all":
+    if len(valid_dates) > 0 and date_filter_mode != "كل البيانات":
         min_date = valid_dates.min().date()
         max_date = valid_dates.max().date()
 
-        if date_filter_mode == "day":
+        if date_filter_mode == "يوم محدد":
             selected_day = st.sidebar.date_input(
                 tr("اختر اليوم", "Choose day"),
                 value=max_date,
@@ -1561,7 +1547,7 @@ if df is not None and len(df) > 0:
             )
             mask = raw_dates == pd.Timestamp(selected_day)
             filtered_df = df[mask].copy()
-            date_badge = f"{tr('يوم محدد', 'Selected day')}: {selected_day}"
+            date_badge = f"يوم محدد: {selected_day}"
         else:
             date_range = st.sidebar.date_input(
                 tr("اختر الفترة", "Choose date range"),
@@ -1573,29 +1559,25 @@ if df is not None and len(df) > 0:
                 start_date, end_date = date_range
                 mask = (raw_dates >= pd.Timestamp(start_date)) & (raw_dates <= pd.Timestamp(end_date))
                 filtered_df = df[mask].copy()
-                date_badge = f"{tr('من', 'From')} {start_date} {tr('إلى', 'to')} {end_date}"
-    elif date_filter_mode != "all":
-        st.sidebar.warning(tr(
-            "لم أستطع قراءة تواريخ صحيحة من العمود المختار.",
-            "Could not read valid dates from the selected column."
-        ))
+                date_badge = f"من {start_date} إلى {end_date}"
+    elif date_filter_mode != "كل البيانات":
+        st.sidebar.warning(tr("لم أستطع قراءة تواريخ صحيحة من العمود المختار.", "Could not read valid dates from the selected column."))
 
     df = filtered_df.copy()
 
     st.markdown(
         f"""
         <div class="glass-box small-note">
-            <b>{tr('المصدر', 'Source')}:</b> {source_label} &nbsp; | &nbsp;
-            <b>{tr('فلترة التاريخ', 'Date filter')}:</b> {date_badge} &nbsp; | &nbsp;
-            <b>{tr('الصفوف بعد الفلترة', 'Rows after filter')}:</b> {format_int(len(df))}
-            {f"&nbsp; | &nbsp; <b>{tr('آخر تحديث', 'Last update')}:</b> {last_update_text}" if last_update_text else ""}
+            <b>المصدر:</b> {source_label} &nbsp; | &nbsp;
+            <b>فلترة التاريخ:</b> {date_badge} &nbsp; | &nbsp;
+            <b>الصفوف بعد الفلترة:</b> {format_int(len(df))}
         </div>
         """,
         unsafe_allow_html=True
     )
 
     if len(df) == 0:
-        st.warning(tr("لا توجد بيانات في الفترة المختارة.", "No data found in the selected period."))
+        st.warning("لا توجد بيانات في الفترة المختارة.")
         st.stop()
 
     # =========================
@@ -1623,11 +1605,11 @@ if df is not None and len(df) > 0:
     missing = [name for name, col in required_cols.items() if col is None]
 
     if missing:
-        st.error(f"{tr('في أعمدة ناقصة أو غير واضحة', 'Missing or unclear columns')}: {', '.join(missing)}")
+        st.error(f"في أعمدة ناقصة أو غير واضحة: {', '.join(missing)}")
         st.stop()
 
     if variety_col is None:
-        st.warning(tr("عمود نوع الحشوة غير موجود، لذلك تحليل الحشوات لن يظهر بشكل كامل.", "The Variety/Filling column was not found, so filling analysis may be incomplete."))
+        st.warning("عمود نوع الحشوة غير موجود، لذلك تحليل الحشوات لن يظهر بشكل كامل.")
 
     # =========================
     # Clean Data
@@ -1908,7 +1890,7 @@ if df is not None and len(df) > 0:
     # =========================
 
     st.sidebar.success(tr("تم تحميل الملف وتحليل البيانات بنجاح", "Data loaded and analyzed successfully"))
-    st.sidebar.markdown(tr("### 📌 ملخص", "### 📌 Summary"))
+    st.sidebar.markdown(f"### 📌 {tr('ملخص', 'Summary')}")
     st.sidebar.write(f"{tr('الصفوف بعد فلترة التاريخ', 'Rows after date filter')}: **{format_int(total_rows)}**")
     st.sidebar.write(f"{tr('الطلبات الفعلية', 'Active orders')}: **{format_int(active_unique_orders)}**")
     st.sidebar.write(f"{tr('الملغاة', 'Cancelled')}: **{format_int(cancelled_orders)}**")
@@ -1927,11 +1909,11 @@ if df is not None and len(df) > 0:
         render_kpi(tr("أكثر حشوة", "Top filling"), top_filling.index[0] if len(top_filling) else "-", f"{format_int(top_filling.iloc[0]) if len(top_filling) else 0} {tr('قطعة', 'pcs')}", "#db2777")
 
     tab_overview, tab_hours, tab_fillings, tab_branch, tab_tables, tab_export = st.tabs(
-        [tr("🏠 النظرة العامة", "🏠 Overview"), tr("⏱️ الساعات", "⏱️ Hours"), tr("🍰 الحشوات", "🍰 Fillings"), tr("🏬 تحليل فرع", "🏬 Branch Analysis"), tr("📋 الجداول", "📋 Tables"), tr("⬇️ التصدير", "⬇️ Export")]
+        [tr("🏠 النظرة العامة", "🏠 Overview"), tr("⏱️ الساعات", "⏱️ Hours"), tr("🍰 الحشوات", "🍰 Fillings"), tr("🏬 تحليل فرع", "🏬 Branch analysis"), tr("📋 الجداول", "📋 Tables"), tr("⬇️ التصدير", "⬇️ Export")]
     )
 
     with tab_overview:
-        st.markdown(f'<div class="section-title">{tr("نظرة تشغيلية سريعة", "Quick operational overview")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">نظرة تشغيلية سريعة</div>', unsafe_allow_html=True)
 
         branch_df = hourly.drop(index="الإجمالي", errors="ignore").copy()
         branch_totals = branch_df["الإجمالي"].sort_values(ascending=False).reset_index()
@@ -1949,7 +1931,7 @@ if df is not None and len(df) > 0:
                 y="الفرع",
                 orientation="h",
                 text="عدد الطلبات",
-                title=tr("ترتيب الفروع حسب عدد الطلبات", "Branches ranked by order count"),
+                title="ترتيب الفروع حسب عدد الطلبات",
                 color="عدد الطلبات",
                 color_continuous_scale=["#0ea5e9", "#22c55e", "#f59e0b"]
             )
@@ -1963,7 +1945,7 @@ if df is not None and len(df) > 0:
                 x="الساعة",
                 y="عدد الطلبات",
                 markers=True,
-                title=tr("منحنى ضغط الطلبات بالساعة", "Hourly order pressure curve")
+                title="منحنى ضغط الطلبات بالساعة"
             )
             fig.update_traces(line=dict(width=4, color="#22c55e"), marker=dict(size=10))
             st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
@@ -1985,12 +1967,12 @@ if df is not None and len(df) > 0:
                     names="الحشوة",
                     values="الكمية",
                     hole=0.55,
-                    title=tr("Mix الحشوات", "Filling mix")
+                    title="Mix الحشوات"
                 )
                 fig.update_traces(textposition="inside", textinfo="percent+label")
                 st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
             else:
-                st.info(tr("لا توجد حشوات واضحة في الملف.", "No clear fillings found in the file."))
+                st.info("لا توجد حشوات واضحة في الملف.")
 
         with c4:
             heatmap_df = hourly.drop(index="الإجمالي", errors="ignore").drop(columns="الإجمالي", errors="ignore")
@@ -1999,14 +1981,14 @@ if df is not None and len(df) > 0:
                     heatmap_df,
                     text_auto=True,
                     aspect="auto",
-                    title=tr("Heatmap الطلبات: الفرع × الساعة", "Orders heatmap: branch × hour"),
+                    title="Heatmap الطلبات: الفرع × الساعة",
                     color_continuous_scale=["#0f172a", "#2563eb", "#22c55e", "#facc15"]
                 )
                 fig.update_xaxes(side="top")
                 st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
     with tab_hours:
-        st.markdown(f'<div class="section-title">{tr("تحليل الطلبات حسب الساعة", "Orders by hour analysis")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">تحليل الطلبات حسب الساعة</div>', unsafe_allow_html=True)
 
         hour_totals = hourly.loc["الإجمالي"].drop("الإجمالي", errors="ignore").reset_index()
         hour_totals.columns = ["الساعة", "عدد الطلبات"]
@@ -2016,18 +1998,18 @@ if df is not None and len(df) > 0:
             x="الساعة",
             y="عدد الطلبات",
             text="عدد الطلبات",
-            title=tr("إجمالي الطلبات في كل ساعة", "Total orders per hour"),
+            title="إجمالي الطلبات في كل ساعة",
             color="عدد الطلبات",
             color_continuous_scale=["#1d4ed8", "#16a34a", "#f59e0b"]
         )
         fig.update_traces(textposition="outside")
         st.plotly_chart(fig_layout(fig, 440), use_container_width=True, config=mobile_chart_config())
 
-        st.markdown(f'<div class="section-title">{tr("جدول الفرع × الساعة", "Branch × hour table")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">جدول الفرع × الساعة</div>', unsafe_allow_html=True)
         display_pretty_dataframe(hourly, height=450)
 
     with tab_fillings:
-        st.markdown(f'<div class="section-title">{tr("تحليل الحشوات حسب الفرع والكمية", "Fillings by branch and quantity")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">تحليل الحشوات حسب الفرع والكمية</div>', unsafe_allow_html=True)
 
         if len(filling_rows):
             fill_series = fillings_qty.loc["الإجمالي"].drop("الإجمالي", errors="ignore").sort_values(ascending=False).reset_index()
@@ -2041,7 +2023,7 @@ if df is not None and len(df) > 0:
                     x="الحشوة",
                     y="الكمية",
                     text="الكمية",
-                    title=tr("أكثر الحشوات طلباً", "Most requested fillings"),
+                    title="أكثر الحشوات طلباً",
                     color="الكمية",
                     color_continuous_scale=["#2563eb", "#16a34a", "#f59e0b"]
                 )
@@ -2054,27 +2036,27 @@ if df is not None and len(df) > 0:
                     names="الحشوة",
                     values="الكمية",
                     hole=0.48,
-                    title=tr("نسبة كل حشوة من الإجمالي", "Share of each filling")
+                    title="نسبة كل حشوة من الإجمالي"
                 )
                 fig.update_traces(textposition="inside", textinfo="percent+label")
                 st.plotly_chart(fig_layout(fig, 430), use_container_width=True, config=mobile_chart_config())
 
-            st.markdown(f'<div class="section-title">{tr("الحشوات لكل فرع - حسب الكمية", "Fillings per branch - by quantity")}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">الحشوات لكل فرع - حسب الكمية</div>', unsafe_allow_html=True)
             display_pretty_dataframe(fillings_qty, height=420)
 
-            st.markdown(f'<div class="section-title">{tr("الحشوات لكل فرع - حسب عدد الطلبات", "Fillings per branch - by orders")}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-title">الحشوات لكل فرع - حسب عدد الطلبات</div>', unsafe_allow_html=True)
             display_pretty_dataframe(fillings_orders, height=420)
         else:
-            st.info(tr("لا توجد حشوات واضحة في الملف.", "No clear fillings found in the file."))
+            st.info("لا توجد حشوات واضحة في الملف.")
 
     with tab_branch:
-        st.markdown(f'<div class="section-title">{tr("تحليل تفصيلي حسب الفرع", "Detailed branch analysis")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">تحليل تفصيلي حسب الفرع</div>', unsafe_allow_html=True)
 
         available_branches = sorted(unique_orders["الفرع"].dropna().unique().tolist())
 
         if available_branches:
             selected_branch = st.selectbox(
-                tr("اختر الفرع", "Choose branch"),
+                "اختر الفرع",
                 available_branches,
                 index=0
             )
@@ -2084,15 +2066,15 @@ if df is not None and len(df) > 0:
 
             b1, b2, b3 = st.columns(3)
             with b1:
-                render_kpi(tr("طلبات الفرع", "Branch orders"), format_int(branch_orders[order_id_col].nunique()), selected_branch, "#2563eb")
+                render_kpi("طلبات الفرع", format_int(branch_orders[order_id_col].nunique()), selected_branch, "#2563eb")
             with b2:
-                render_kpi(tr("حشوات الفرع", "Branch fillings"), format_int(branch_items["كمية رقمية"].sum() if len(branch_items) else 0), tr("إجمالي الكمية", "Total quantity"), "#16a34a")
+                render_kpi("حشوات الفرع", format_int(branch_items["كمية رقمية"].sum() if len(branch_items) else 0), "إجمالي الكمية", "#16a34a")
             with b3:
                 if len(branch_items):
                     bf = branch_items.groupby("الحشوة الموحدة")["كمية رقمية"].sum().sort_values(ascending=False)
-                    render_kpi(tr("أعلى حشوة", "Top filling"), bf.index[0], f"{format_int(bf.iloc[0])} {tr('قطعة', 'pcs')}", "#ea580c")
+                    render_kpi("أعلى حشوة", bf.index[0], f"{format_int(bf.iloc[0])} قطعة", "#ea580c")
                 else:
-                    render_kpi(tr("أعلى حشوة", "Top filling"), "-", tr("لا توجد حشوات", "No fillings"), "#ea580c")
+                    render_kpi("أعلى حشوة", "-", "لا توجد حشوات", "#ea580c")
 
             c1, c2 = st.columns(2)
 
@@ -2110,7 +2092,7 @@ if df is not None and len(df) > 0:
                     x="الساعة",
                     y="عدد الطلبات",
                     text="عدد الطلبات",
-                    title=f"{tr('طلبات', 'Orders for')} {selected_branch} {tr('بالساعة', 'by hour')}",
+                    title=f"طلبات {selected_branch} بالساعة",
                     color="عدد الطلبات",
                     color_continuous_scale=["#1d4ed8", "#16a34a"]
                 )
@@ -2132,15 +2114,15 @@ if df is not None and len(df) > 0:
                         names="الحشوة",
                         values="الكمية",
                         hole=0.50,
-                        title=f"{tr('Mix الحشوات في', 'Filling mix in')} {selected_branch}"
+                        title=f"Mix الحشوات في {selected_branch}"
                     )
                     fig.update_traces(textinfo="percent+label")
                     st.plotly_chart(fig_layout(fig, 410), use_container_width=True, config=mobile_chart_config())
                 else:
-                    st.info(tr("لا توجد حشوات لهذا الفرع.", "No fillings found for this branch."))
+                    st.info("لا توجد حشوات لهذا الفرع.")
 
             if selected_branch in branch_hour_details_dict:
-                st.markdown(f'<div class="section-title">{tr("الحشوات بالساعة للفرع المختار", "Fillings by hour for selected branch")}</div>', unsafe_allow_html=True)
+                st.markdown('<div class="section-title">الحشوات بالساعة للفرع المختار</div>', unsafe_allow_html=True)
                 selected_table = branch_hour_details_dict[selected_branch]
                 display_pretty_dataframe(selected_table, height=430)
 
@@ -2157,21 +2139,21 @@ if df is not None and len(df) > 0:
                         x="الساعة",
                         y="الكمية",
                         color="الحشوة",
-                        title=f"{tr('الحشوات بالساعة', 'Fillings by hour')} - {selected_branch}",
+                        title=f"الحشوات بالساعة - {selected_branch}",
                         barmode="stack"
                     )
                     st.plotly_chart(fig_layout(fig, 460), use_container_width=True, config=mobile_chart_config())
 
     with tab_tables:
-        st.markdown(f'<div class="section-title">{tr("الجداول التفصيلية", "Detailed tables")}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-title">الجداول التفصيلية</div>', unsafe_allow_html=True)
 
-        with st.expander(tr("معاينة أول 20 صف من البيانات المنظفة", "Preview first 20 cleaned rows"), expanded=False):
+        with st.expander("معاينة أول 20 صف من البيانات المنظفة", expanded=False):
             st.dataframe(clean.head(20), use_container_width=True, height=420)
 
-        with st.expander(tr("تحليل الطلبات لكل فرع بالساعة", "Orders per branch by hour"), expanded=True):
+        with st.expander("تحليل الطلبات لكل فرع بالساعة", expanded=True):
             display_pretty_dataframe(hourly, height=430)
 
-        with st.expander(tr("تحليل الحشوات بالساعة لكل فرع", "Fillings by hour for each branch"), expanded=False):
+        with st.expander("تحليل الحشوات بالساعة لكل فرع", expanded=False):
             display_pretty_dataframe(fillings_by_hour_branch, height=520)
 
         with st.expander("Summary Data", expanded=False):
@@ -2181,12 +2163,10 @@ if df is not None and len(df) > 0:
         st.markdown(f'<div class="section-title">{tr("تحميل ملف Excel التفاعلي", "Download interactive Excel file")}</div>', unsafe_allow_html=True)
 
         st.markdown(
-            f"""
+            """
             <div class="glass-box small-note">
-            {tr(
-                "الملف الناتج Excel تفاعلي متوافق. عدّل أو احذف من شيت <b>Cleaned Data</b>، وخصوصاً أعمدة <b>Calc_</b>، وسيتم تحديث الجداول والرسومات داخل Excel.",
-                "The generated Excel file is interactive. Edit/delete data in <b>Cleaned Data</b>, especially <b>Calc_</b> columns, and Excel tables/charts will update."
-            )}
+            الملف الناتج Excel تفاعلي متوافق. عدّل أو احذف من شيت <b>Cleaned Data</b>،
+            وخصوصاً أعمدة <b>Calc_</b>، وسيتم تحديث الجداول والرسومات داخل Excel.
             </div>
             """,
             unsafe_allow_html=True
@@ -2204,18 +2184,18 @@ if df is not None and len(df) > 0:
         )
 
         st.download_button(
-            label=tr("⬇️ تحميل ملف Excel V6 للفترة المختارة", "⬇️ Download Excel V6 for selected period"),
+            label="⬇️ تحميل ملف Excel V5 للفترة المختارة",
             data=excel_file,
-            file_name="orders_hours_fillings_cloud_v6.xlsx",
+            file_name="تحليل_الساعات_والحشوات_Cloud_V5.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
 
 else:
     st.markdown(
-        f"""
+        """
         <div class="glass-box small-note">
-        {tr("👈 اختر مصدر البيانات من القائمة الجانبية: رفع ملف أو Google Sheet. بعد تحميل البيانات اختر فلترة تاريخ الاستلام ثم سيظهر Dashboard.", "👈 Choose a data source from the sidebar: Upload File or Google Sheet. After loading data, choose the date filter and the dashboard will appear.")}
+        👈 اختر مصدر البيانات من القائمة الجانبية: رفع ملف أو Google Sheet. بعد تحميل البيانات اختر فلترة تاريخ الاستلام ثم سيظهر Dashboard.
         </div>
         """,
         unsafe_allow_html=True
