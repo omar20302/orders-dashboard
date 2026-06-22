@@ -2111,7 +2111,7 @@ st.markdown(
     f"""
     <div class="hero">
         <h1>{tr('🧁 مركز تحكم طلبات MAD', '🧁 MAD Orders Control Center')}</h1>
-        <p>{APP_VERSION} — {tr('نفس التقارير التشغيلية والإدارية بالكامل بدون حذف: ملخص تنفيذي، ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، الطاقة التشغيلية، وجودة البيانات.', 'All operational and management reports are preserved: executive summary, branch ranking, product value, filling intelligence, add-ons opportunities, operational capacity, and data quality.')}</p>
+        <p> {tr(' التقارير التشغيلية والإدارية : ملخص تنفيذي، ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، الطاقة التشغيلية، وجودة البيانات.', 'All operational and management reports are preserved: executive summary, branch ranking, product value, filling intelligence, add-ons opportunities, operational capacity, and data quality.')}</p>
     </div>
     """,
     unsafe_allow_html=True,
