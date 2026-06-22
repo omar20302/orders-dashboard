@@ -1491,8 +1491,6 @@ st.markdown(
         <h1>{tr('📊 MAD Orders Dashboard V6 Full', '📊 MAD Orders Dashboard V6 Full')}</h1>
         <p>
             {tr(
-                'نفس لوحة التحليل التشغيلية الكاملة السابقة بدون حذف أي وظيفة، مع إضافة اختيار اللغة والتحديث التلقائي وتهيئة أفضل للجوال.',
-                'The same full operational analytics dashboard with no removed features, plus language selection, auto refresh, and better mobile responsiveness.'
             )}
         </p>
     </div>
