@@ -2,7 +2,7 @@ import re
 import html
 from io import BytesIO
 from urllib.parse import urlparse, parse_qs
-from datetime import datetime
+from datetime import datetime, date
 
 import pandas as pd
 import streamlit as st
@@ -21,7 +21,7 @@ from openpyxl.formatting.rule import ColorScaleRule
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.3.6 Safe Sidebar Outside Click"
+APP_VERSION = "V8.3.7 Today Date Default"
 
 
 # =========================
@@ -2342,7 +2342,23 @@ st.sidebar.markdown("## 🔎 فلاتر التحليل")
 available_dates = sorted([d for d in items_all["تاريخ التحليل"].dropna().unique()])
 if available_dates:
     min_date, max_date = min(available_dates), max(available_dates)
-    date_range = st.sidebar.date_input("فترة تاريخ التوصيل", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+    today_date = date.today()
+    if today_date < min_date:
+        default_start = min_date
+        default_end = min_date
+    elif today_date > max_date:
+        default_start = max_date
+        default_end = max_date
+    else:
+        default_start = today_date
+        default_end = today_date
+
+    date_range = st.sidebar.date_input(
+        "فترة تاريخ التوصيل",
+        value=(default_start, default_end),
+        min_value=min_date,
+        max_value=max_date
+    )
 else:
     date_range = None
 
