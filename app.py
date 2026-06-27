@@ -744,15 +744,14 @@ def load_data_from_supabase_table():
     if not client:
         return pd.DataFrame()
     try:
-        # افتراض اسم الجدول 'orders' ويمكن التحكم به أو تغييره
-        response = client.table("orders").select("*").execute()
+        # تم تغيير اسم الجدول هنا من 'orders' إلى 'daily_orders' ليطابق قاعدة بياناتك
+        response = client.table("daily_orders").select("*").execute()
         if response.data:
             return pd.DataFrame(response.data)
         return pd.DataFrame()
     except Exception as e:
         st.error(f"خطأ أثناء سحب البيانات المباشرة من Supabase: {e}")
         return pd.DataFrame()
-
 
 def read_uploaded_file(uploaded_file):
     name = uploaded_file.name.lower()
