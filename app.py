@@ -19,18 +19,18 @@ from openpyxl.formatting.rule import ColorScaleRule
 
 
 # ============================================================
-# MAD Orders Dashboard V8.3.4 - Fixed Branch Mapping
+# Multi Brand Orders Dashboard V8.5.0 - Supabase Brand/Branch Support
 # ============================================================
 
 DEFAULT_GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1Lf7R_G5hZ6KvyE5OyRc78b1dKVjD1bEDeeZnorANrxI/edit?usp=sharing"
-APP_VERSION = "V8.4.3 Supabase Data Source"
+APP_VERSION = "V8.5.0 Multi Brand Supabase"
 
 
 # =========================
 # Page Config
 # =========================
 st.set_page_config(
-    page_title="MAD Orders Control Center",
+    page_title="Multi Brand Orders Control Center",
     page_icon="🧁",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -519,7 +519,7 @@ def extract_branch(chef_name):
     text = re.sub(r"\s+", " ", text).strip()
     low = text.lower()
 
-    if "قرطبة" in text or "qurtuba" in low or "qortoba" in low or "qurtobah" in low:
+    if "قرطبة" in text or "قرطبه" in text or "qurtuba" in low or "qortoba" in low or "qurtobah" in low:
         return "قرطبة"
 
     if "عريجاء" in text or "عريجا" in text or "العريجاء" in text or "uraija" in low or "uraijaa" in low or "urejha" in low:
@@ -550,6 +550,123 @@ def extract_branch(chef_name):
 
     # Final fallback: route unknown/blank rows to العقيق so no undefined branch appears.
     return "العقيق"
+
+
+# =========================
+# Multi Brand Helpers
+# =========================
+BRAND_DISPLAY_NAMES = {
+    "MAD": "MAD",
+    "TORTA": "Torta and More",
+    "LEMOULIN": "Le Moulin",
+    "MIZZLE": "Mizzle",
+}
+
+BRANCH_CODE_DISPLAY = {
+    "AQIQ": "العقيق",
+    "QURTUBA": "قرطبة",
+    "RAWDA": "الروضة",
+    "URAIJA": "عريجاء",
+    "AL_ARID": "العارض",
+    "AL_WOROOD": "الورود",
+}
+
+BRANCH_NAME_TO_CODE = {
+    "العقيق": "AQIQ",
+    "قرطبة": "QURTUBA",
+    "الروضة": "RAWDA",
+    "عريجاء": "URAIJA",
+    "العارض": "AL_ARID",
+    "الورود": "AL_WOROOD",
+}
+
+
+def normalize_brand_code(value):
+    text = normalize_arabic_digits(value).strip().upper()
+    if not text or text in ["NAN", "NONE", "NULL", "-"]:
+        return ""
+    text = re.sub(r"[^A-Z0-9_]+", "", text)
+    aliases = {
+        "MADNESSANDDESIRE": "MAD",
+        "MADNESS": "MAD",
+        "TORTAANDMORE": "TORTA",
+        "TORTA": "TORTA",
+        "LEMOLIN": "LEMOULIN",
+        "LEMOULIN": "LEMOULIN",
+        "LEMOULINBAKERY": "LEMOULIN",
+        "MIZZLE": "MIZZLE",
+    }
+    return aliases.get(text, text)
+
+
+def infer_brand_code_from_text(value):
+    text = normalize_arabic_digits(value).strip()
+    low = text.lower()
+    if not text:
+        return ""
+    if any(k in low for k in ["madness", "madness and desire"]) or any(k in text for k in ["مادنيس", "مادنس"]):
+        return "MAD"
+    if any(k in low for k in ["torta", "torta and more"]) or any(k in text for k in ["تورتا", "تورتا اند مور"]):
+        return "TORTA"
+    if any(k in low for k in ["le moulin", "lemoulin", "le moulin bakery"]) or any(k in text for k in ["لومولا", "لومولين", "لو مولان"]):
+        return "LEMOULIN"
+    if "mizzle" in low or "مزل" in text or "ميزّل" in text:
+        return "MIZZLE"
+    return ""
+
+
+def brand_label(value):
+    code = normalize_brand_code(value)
+    return BRAND_DISPLAY_NAMES.get(code, code or "غير محدد")
+
+
+def normalize_branch_code(value):
+    text = normalize_arabic_digits(value).strip().upper()
+    if not text or text in ["NAN", "NONE", "NULL", "-"]:
+        return ""
+    text = re.sub(r"[^A-Z0-9_]+", "_", text).strip("_")
+    aliases = {
+        "ALARD": "AL_ARID",
+        "ALARID": "AL_ARID",
+        "ARID": "AL_ARID",
+        "ALWOROOD": "AL_WOROOD",
+        "WOROOD": "AL_WOROOD",
+        "RAWDAH": "RAWDA",
+        "RAWDA": "RAWDA",
+        "QURTUBAH": "QURTUBA",
+        "QURTUBA": "QURTUBA",
+        "URAIJAA": "URAIJA",
+        "UREJHA": "URAIJA",
+        "URAIJA": "URAIJA",
+        "AQIQ": "AQIQ",
+    }
+    return aliases.get(text, text)
+
+
+def branch_name_from_code_or_text(branch_code, raw_branch_name):
+    code = normalize_branch_code(branch_code)
+    if code in BRANCH_CODE_DISPLAY:
+        return BRANCH_CODE_DISPLAY[code]
+    return extract_branch(raw_branch_name)
+
+
+def make_analytics_branch_label(brand_code, branch_name, branch_code=""):
+    b_code = normalize_brand_code(brand_code)
+    b_label = BRAND_DISPLAY_NAMES.get(b_code, b_code)
+    branch_clean = str(branch_name or "").strip() or BRANCH_CODE_DISPLAY.get(normalize_branch_code(branch_code), "بدون فرع")
+    if b_label:
+        return f"{b_label} - {branch_clean}"
+    return branch_clean
+
+
+def make_order_group_key(base_order_key, brand_code="", branch_code=""):
+    base = str(base_order_key or "").strip()
+    b_code = normalize_brand_code(brand_code)
+    br_code = normalize_branch_code(branch_code)
+    if b_code or br_code:
+        return "|".join([b_code or "NO_BRAND", br_code or "NO_BRANCH", base])
+    return base
+
 
 def normalize_variety(value):
     text = str(value).strip()
@@ -1115,6 +1232,11 @@ def normalize_supabase_orders_df(df):
     optional_meta = {
         "Supabase ID": "id",
         "Company ID": "company_id",
+        "Brand ID": "brand_id",
+        "Brand Code": "brand_code",
+        "Branch ID": "branch_id",
+        "Branch Code": "branch_code",
+        "Source Branch Name": "source_branch_name",
         "Pickup Datetime": "pickup_datetime",
         "Courier Handoff Datetime": "courier_handoff_datetime",
         "Late Minutes": "late_minutes",
@@ -1161,11 +1283,45 @@ def prepare_data(raw_df):
             df["OrderId_Auto"] = range(1, len(df) + 1)
             cols["order_id"] = "OrderId_Auto"
 
-    df["رقم الطلب الموحد"] = col_or_blank(df, cols["order_id"]).replace("", pd.NA).fillna(col_or_blank(df, cols["order_no"])).astype(str)
-    df["رقم الطلب الظاهر"] = col_or_blank(df, cols["order_no"]).replace("", pd.NA).fillna(df["رقم الطلب الموحد"]).astype(str)
+    df["_order_key_base"] = col_or_blank(df, cols["order_id"]).replace("", pd.NA).fillna(col_or_blank(df, cols["order_no"])).astype(str)
+    df["رقم الطلب الموحد"] = df["_order_key_base"]
+    df["رقم الطلب الظاهر"] = col_or_blank(df, cols["order_no"]).replace("", pd.NA).fillna(df["_order_key_base"]).astype(str)
     df["العميل"] = col_or_blank(df, cols["customer"])
     df["الشيف / الفرع الأصلي"] = col_or_blank(df, cols["chef"])
-    df["الفرع"] = df["الشيف / الفرع الأصلي"].apply(extract_branch)
+
+    brand_col = find_col(df, ["Brand Code", "brand_code", "كود البراند", "البراند", "Brand"])
+    branch_code_col = find_col(df, ["Branch Code", "branch_code", "كود الفرع"])
+    source_branch_col = find_col(df, ["Source Branch Name", "source_branch_name", "source_branch", "مصدر الفرع"])
+
+    if source_branch_col:
+        src_branch_values = col_or_blank(df, source_branch_col)
+        df["الشيف / الفرع الأصلي"] = df["الشيف / الفرع الأصلي"].where(
+            df["الشيف / الفرع الأصلي"].astype(str).str.strip().ne(""),
+            src_branch_values,
+        )
+
+    df["كود البراند"] = col_or_blank(df, brand_col).apply(normalize_brand_code) if brand_col else ""
+    inferred_brand = df["الشيف / الفرع الأصلي"].apply(infer_brand_code_from_text)
+    df["كود البراند"] = df["كود البراند"].where(df["كود البراند"].astype(str).str.strip().ne(""), inferred_brand)
+    df["البراند"] = df["كود البراند"].apply(brand_label)
+
+    df["كود الفرع"] = col_or_blank(df, branch_code_col).apply(normalize_branch_code) if branch_code_col else ""
+    df["اسم الفرع"] = [
+        branch_name_from_code_or_text(code, raw)
+        for code, raw in zip(df["كود الفرع"], df["الشيف / الفرع الأصلي"])
+    ]
+    df["كود الفرع"] = df["كود الفرع"].where(
+        df["كود الفرع"].astype(str).str.strip().ne(""),
+        df["اسم الفرع"].map(BRANCH_NAME_TO_CODE).fillna(""),
+    )
+    df["الفرع"] = [
+        make_analytics_branch_label(brand, branch, code)
+        for brand, branch, code in zip(df["كود البراند"], df["اسم الفرع"], df["كود الفرع"])
+    ]
+    df["رقم الطلب الموحد"] = [
+        make_order_group_key(base, brand, branch)
+        for base, brand, branch in zip(df["_order_key_base"], df["كود البراند"], df["كود الفرع"])
+    ]
     df["الحالة"] = col_or_blank(df, cols["status"]).replace("", "غير محدد")
     df["المنتج"] = col_or_blank(df, cols["product"]).apply(normalize_product_name)
     df["الحشوة"] = col_or_blank(df, cols["variety"]).apply(normalize_variety)
@@ -1227,6 +1383,10 @@ def prepare_data(raw_df):
     order_level = group.agg(
         رقم_الطلب=("رقم الطلب الظاهر", "first"),
         العميل=("العميل", "first"),
+        البراند=("البراند", "first"),
+        كود_البراند=("كود البراند", "first"),
+        اسم_الفرع=("اسم الفرع", "first"),
+        كود_الفرع=("كود الفرع", "first"),
         الفرع=("الفرع", "first"),
         الحالة=("الحالة", "first"),
         قيمة_الطلب=("قيمة الطلب رقم", "max"),
@@ -1247,6 +1407,9 @@ def prepare_data(raw_df):
     # Cleanup duplicate Arabic/underscore naming from agg.
     order_level = order_level.rename(columns={
         "رقم_الطلب": "رقم الطلب",
+        "كود_البراند": "كود البراند",
+        "اسم_الفرع": "اسم الفرع",
+        "كود_الفرع": "كود الفرع",
         "قيمة_الطلب": "قيمة الطلب",
         "تاريخ_التحليل": "تاريخ التحليل",
         "وقت_الاستلام": "وقت الاستلام",
@@ -2245,7 +2408,7 @@ def build_production_queue(active_items):
         q["نطاق ساعة الاستلام"] = "بدون وقت"
 
     cols = [
-        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
+        "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض", "البراند", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد",
         "الحالة", "العميل", "نوع الصنف", "المنتج", "الحشوة", "الكمية رقم",
         "أولوية", "سبب المتابعة", "رقم الجوال المستخرج", "واتساب", "الملاحظة",
         "تاريخ ووقت الاستلام", "ساعة رقم"
@@ -2312,7 +2475,7 @@ def build_action_center(active_items):
 
     cols = [
         "الأولوية", "حالة المتابعة", "نوع الإجراء", "نطاق ساعة الاستلام", "وقت عرض", "تاريخ عرض",
-        "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
+        "البراند", "الفرع", "رقم الطلب الظاهر", "رقم الطلب الموحد", "الحالة", "العميل",
         "المنتج", "الحشوة", "الكمية رقم", "رقم الجوال المستخرج", "واتساب",
         "ملاحظة داخلية", "الملاحظة", "تاريخ ووقت الاستلام", "ساعة رقم"
     ]
@@ -2574,7 +2737,7 @@ def build_late_orders_reports(active_items, active_orders, grace_minutes=10, ris
 
     display_cols = [
         "الأولوية", "حالة التأخير", "نوع التأخير", "الإجراء المقترح", "مدة التأخير", "باقي على الموعد",
-        "وقت الاستلام", "وقت التسليم للمندوب عرض", "تم التسليم للمندوب؟", "الفرع", "رقم الطلب", "رقم الطلب الموحد",
+        "وقت الاستلام", "وقت التسليم للمندوب عرض", "تم التسليم للمندوب؟", "البراند", "الفرع", "رقم الطلب", "رقم الطلب الموحد",
         "الحالة", "العميل", "قيمة الطلب", "المنتجات", "الحشوات", "الكمية", "أسباب_المتابعة", "الجوال",
         "الملاحظات", "الساعة", "ساعة رقم", "تاريخ ووقت الاستلام", "وقت التسليم للمندوب",
         "دقائق التأخير المعتمدة", "دقائق التأخير الفعلي", "دقائق التأخير الحالي", "دقائق حتى الاستلام"
@@ -2869,7 +3032,7 @@ components.html(
 st.markdown(
     f"""
     <div class="hero">
-        <h1>🧁 MAD Orders Control Center</h1>
+        <h1>🧁 Multi Brand Orders Control Center</h1>
         <p>{APP_VERSION} — لوحة تشغيل وتقارير إدارية متقدمة: ملخص تنفيذي، ترتيب الفروع، قيمة المنتجات، ذكاء الحشوات، فرص الإضافات، الطاقة التشغيلية، وجودة البيانات.</p>
     </div>
     """,
@@ -3058,10 +3221,19 @@ if available_dates:
 else:
     date_range = None
 
-branches = sorted(items_all["الفرع"].dropna().unique().tolist())
+brands = sorted([b for b in items_all.get("البراند", pd.Series(dtype=str)).dropna().unique().tolist() if str(b).strip()])
+selected_brands = st.sidebar.multiselect("البراندات", brands, default=brands, help="اختر براند واحد أو أكثر. التقارير تفصل الفروع حسب البراند حتى لو اسم الفرع متكرر.")
+
+branch_source_for_filter = items_all.copy()
+if selected_brands and "البراند" in branch_source_for_filter.columns:
+    branch_source_for_filter = branch_source_for_filter[branch_source_for_filter["البراند"].isin(selected_brands)]
+branches = sorted(branch_source_for_filter["الفرع"].dropna().unique().tolist())
 selected_branches = st.sidebar.multiselect("الفروع", branches, default=branches)
 
-statuses = sorted(items_all["الحالة"].dropna().unique().tolist())
+status_source_for_filter = branch_source_for_filter.copy()
+if selected_branches:
+    status_source_for_filter = status_source_for_filter[status_source_for_filter["الفرع"].isin(selected_branches)]
+statuses = sorted(status_source_for_filter["الحالة"].dropna().unique().tolist())
 selected_statuses = st.sidebar.multiselect("الحالات", statuses, default=statuses)
 
 varieties = sorted([v for v in items_all["الحشوة"].dropna().unique().tolist() if str(v).strip()])
@@ -3079,6 +3251,8 @@ late_risk_window_minutes = st.sidebar.number_input("تنبيه قبل الموع
 
 
 filtered = items_all.copy()
+if selected_brands and "البراند" in filtered.columns:
+    filtered = filtered[filtered["البراند"].isin(selected_brands)]
 if available_dates and date_range:
     if isinstance(date_range, tuple) and len(date_range) == 2:
         start_date, end_date = date_range
@@ -3102,6 +3276,8 @@ if search_text.strip():
     search_blob = (
         filtered["رقم الطلب الموحد"].astype(str) + " " +
         filtered["رقم الطلب الظاهر"].astype(str) + " " +
+        filtered.get("البراند", pd.Series([""] * len(filtered), index=filtered.index)).astype(str) + " " +
+        filtered.get("الفرع", pd.Series([""] * len(filtered), index=filtered.index)).astype(str) + " " +
         filtered["العميل"].astype(str) + " " +
         filtered["المنتج"].astype(str) + " " +
         filtered["رقم الجوال المستخرج"].astype(str) + " " +
@@ -3157,6 +3333,7 @@ if not active_orders.empty:
         top_hour, top_hour_count = th.index[0], int(th.iloc[0])
 
 st.sidebar.success("تم تحليل البيانات")
+st.sidebar.write(f"البراندات المختارة: **{format_int(len(selected_brands)) if 'selected_brands' in globals() else '0'}**")
 st.sidebar.write(f"الصفوف: **{format_int(total_rows)}**")
 st.sidebar.write(f"الطلبات: **{format_int(total_orders)}**")
 st.sidebar.write(f"المبيعات: **{format_money(total_sales)}**")
@@ -3167,6 +3344,11 @@ st.sidebar.write(f"المتأخرة: **{format_int(late_order_count)}**")
 # =========================
 # Main KPIs
 # =========================
+try:
+    brand_names_for_header = ", ".join(selected_brands) if selected_brands else "All Brands"
+    st.markdown(f'<div class="note-box">📌 نطاق التحليل الحالي: <b>{brand_names_for_header}</b> — الفروع معروضة بصيغة Brand - Branch لمنع خلط نفس الفرع بين البراندات.</div>', unsafe_allow_html=True)
+except Exception:
+    pass
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1:
     render_kpi("عدد الطلبات", format_int(total_orders), "Unique Orders", "#2563eb")
@@ -3282,7 +3464,7 @@ with tab_daily:
         st.plotly_chart(fig_layout(fig, 520), use_container_width=True, config=chart_config())
 
     st.markdown('<div class="mini-title">أقرب جدول تشغيل ضمن الفلاتر</div>', unsafe_allow_html=True)
-    ops_cols = ["رقم الطلب", "العميل", "الفرع", "الحالة", "تاريخ التحليل", "وقت الاستلام", "الساعة", "قيمة الطلب", "عدد الأصناف", "عدد الإضافات", "يحتاج متابعة"]
+    ops_cols = ["رقم الطلب", "العميل", "البراند", "الفرع", "الحالة", "تاريخ التحليل", "وقت الاستلام", "الساعة", "قيمة الطلب", "عدد الأصناف", "عدد الإضافات", "يحتاج متابعة"]
     ops_view_cols = [c for c in ops_cols if c in active_orders.columns]
     ops_sort_cols = [c for c in ["تاريخ ووقت الاستلام", "الفرع"] if c in active_orders.columns]
 
@@ -4263,6 +4445,8 @@ with tab_export:
     st.markdown('<div class="section-title">⬇️ Export Center</div>', unsafe_allow_html=True)
     summary_rows = [
         {"البند": "الإصدار", "القيمة": APP_VERSION},
+        {"البند": "البراندات المختارة", "القيمة": ", ".join(selected_brands) if 'selected_brands' in globals() and selected_brands else "All Brands"},
+        {"البند": "الفروع المختارة", "القيمة": ", ".join(selected_branches) if 'selected_branches' in globals() and selected_branches else "All Branches"},
         {"البند": "عدد الصفوف بعد الفلاتر", "القيمة": total_rows},
         {"البند": "عدد الطلبات", "القيمة": total_orders},
         {"البند": "إجمالي المبيعات", "القيمة": total_sales},
@@ -4280,9 +4464,9 @@ with tab_export:
     display_df(filters_summary, 280)
     excel_file = build_excel_export(reports, filters_summary)
     st.download_button(
-        "⬇️ تحميل Excel شامل كل التقارير V8.4.3",
+        "⬇️ تحميل Excel شامل كل التقارير V8.5.0",
         data=excel_file,
-        file_name="MAD_Orders_Control_Center_V8_4_3.xlsx",
+        file_name="Multi_Brand_Orders_Control_Center_V8_5_0.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     st.markdown(
